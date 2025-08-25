@@ -5,144 +5,197 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SwipeClean Feature Graphic</title>
     <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: #f0f0f0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
         .feature-graphic {
             width: 1024px;
             height: 500px;
-            background: linear-gradient(135deg, #4A90E2, #2C5AA0, #1E3A8A);
+            background: linear-gradient(135deg, #4A90E2 0%, #2C5AA0 50%, #1E3A8A 100%);
+            border-radius: 16px;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 40px 60px;
-            color: white;
-            font-family: 'Arial', sans-serif;
-            box-sizing: border-box;
+            padding: 0 60px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
             position: relative;
             overflow: hidden;
         }
-        
-        .content {
-            flex: 1;
-            z-index: 2;
-        }
-        
-        .title {
-            font-size: 48px;
-            font-weight: bold;
-            margin-bottom: 10px;
-            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
-        }
-        
-        .subtitle {
-            font-size: 24px;
-            margin-bottom: 20px;
-            opacity: 0.9;
-        }
-        
-        .features {
-            font-size: 18px;
-            line-height: 1.6;
-        }
-        
-        .logo-container {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            flex: 0 0 300px;
-            z-index: 2;
-        }
-        
-        .logo-placeholder {
-            width: 200px;
-            height: 200px;
-            background: rgba(255,255,255,0.2);
-            border-radius: 50px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 24px;
-            text-align: center;
-            backdrop-filter: blur(10px);
-            border: 2px solid rgba(255,255,255,0.3);
-        }
-        
-        .swipe-arrows {
+
+        .feature-graphic::before {
+            content: '';
             position: absolute;
-            right: 80px;
-            top: 50%;
-            transform: translateY(-50%);
-            font-size: 60px;
-            opacity: 0.6;
-            animation: pulse 2s infinite;
-        }
-        
-        @keyframes pulse {
-            0%, 100% { opacity: 0.6; }
-            50% { opacity: 1; }
-        }
-        
-        .decoration {
-            position: absolute;
-            background: rgba(255,255,255,0.1);
+            top: -50%;
+            right: -20%;
+            width: 600px;
+            height: 600px;
+            background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
             border-radius: 50%;
         }
-        
-        .decoration1 {
-            width: 150px;
-            height: 150px;
-            top: -75px;
-            right: 200px;
+
+        .content-left {
+            z-index: 2;
+            max-width: 500px;
         }
-        
-        .decoration2 {
-            width: 100px;
-            height: 100px;
-            bottom: -50px;
-            left: 150px;
+
+        .app-logo {
+            width: 80px;
+            height: 80px;
+            border-radius: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+        }
+
+        .app-title {
+            font-size: 48px;
+            font-weight: 700;
+            color: white;
+            margin: 0 0 10px 0;
+            text-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+
+        .app-subtitle {
+            font-size: 22px;
+            font-weight: 400;
+            color: rgba(255,255,255,0.9);
+            margin: 0 0 30px 0;
+            text-shadow: 0 1px 4px rgba(0,0,0,0.2);
+        }
+
+        .features {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .features li {
+            color: white;
+            font-size: 18px;
+            font-weight: 500;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            text-shadow: 0 1px 4px rgba(0,0,0,0.2);
+        }
+
+        .features li::before {
+            content: '✨';
+            margin-right: 12px;
+            font-size: 20px;
+        }
+
+        .phone-mockup {
+            z-index: 2;
+            position: relative;
+            width: 280px;
+            height: 400px;
+            background: #1a1a1a;
+            border-radius: 30px;
+            padding: 20px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .phone-screen {
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(180deg, #4A90E2 0%, #2C5AA0 100%);
+            border-radius: 20px;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .swipe-demo {
+            background: white;
+            width: 200px;
+            height: 200px;
+            border-radius: 15px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+            position: relative;
+        }
+
+        .swipe-demo::before {
+            content: '📸';
+            font-size: 60px;
+            margin-bottom: 10px;
+        }
+
+        .swipe-arrows {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            margin-top: 30px;
+            padding: 0 30px;
+        }
+
+        .swipe-arrow {
+            color: white;
+            font-size: 30px;
+            font-weight: bold;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .swipe-arrow span {
+            font-size: 14px;
+            margin-top: 5px;
+            opacity: 0.9;
+        }
+
+        @media print {
+            body { background: white; padding: 0; }
+            .feature-graphic { box-shadow: none; }
         }
     </style>
 </head>
 <body>
     <div class="feature-graphic">
-        <div class="decoration decoration1"></div>
-        <div class="decoration decoration2"></div>
-        
-        <div class="content">
-            <div class="title">SwipeClean</div>
-            <div class="subtitle">Photo Organizer</div>
-            <div class="features">
-                ✨ Swipe right to keep<br>
-                ← Swipe left to delete<br>
-                🗑️ Trash with recovery<br>
-                🎨 Beautiful interface
-            </div>
+        <div class="content-left">
+            <img src="../assets/logo.png" alt="SwipeClean Logo" class="app-logo">
+            <h1 class="app-title">SwipeClean</h1>
+            <p class="app-subtitle">Photo Organizer</p>
+            <ul class="features">
+                <li>Swipe to organize photos instantly</li>
+                <li>Trash recovery for accidental deletes</li>
+                <li>Beautiful, intuitive interface</li>
+                <li>Free up storage space quickly</li>
+            </ul>
         </div>
-        
-        <div class="logo-container">
-            <div class="logo-placeholder">
-                Your Logo Here<br>
-                (Replace with<br>logo.png)
+        <div class="phone-mockup">
+            <div class="phone-screen">
+                <div class="swipe-demo"></div>
+                <div class="swipe-arrows">
+                    <div class="swipe-arrow">
+                        ←
+                        <span>Delete</span>
+                    </div>
+                    <div class="swipe-arrow">
+                        →
+                        <span>Keep</span>
+                    </div>
+                </div>
             </div>
-        </div>
-        
-        <div class="swipe-arrows">
-            ← →
         </div>
     </div>
-    
-    <script>
-        // Instructions for creating the actual feature graphic
-        console.log(`
-To create the actual feature graphic:
-1. Open this HTML file in a browser
-2. Replace the logo placeholder with your actual logo.png
-3. Take a screenshot at exactly 1024x500px
-4. Or use design tools like Canva, Figma, or Photoshop with these specifications:
-   - Size: 1024x500px
-   - Background: Linear gradient #4A90E2 to #1E3A8A
-   - Include your logo.png
-   - Add the SwipeClean text and features
-   - Save as PNG or JPG
-        `);
-    </script>
 </body>
 </html>
