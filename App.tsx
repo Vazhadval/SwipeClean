@@ -10,9 +10,12 @@ import {
   SafeAreaView,
   StatusBar,
   TouchableOpacity,
+  ScrollView,
+  Modal,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as MediaLibrary from 'expo-media-library';
+import * as FileSystem from 'expo-file-system';
 import { PanGestureHandler, State, GestureHandlerRootView } from 'react-native-gesture-handler';
 import Animated, {
   useAnimatedGestureHandler,
@@ -31,6 +34,12 @@ interface Photo {
   filename: string;
 }
 
+interface TrashedPhoto extends Photo {
+  trashedAt: number;
+  trashPath: string;
+  originalId: string;
+}
+
 export default function App() {
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
@@ -38,6 +47,10 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [keptCount, setKeptCount] = useState(0);
   const [deletedCount, setDeletedCount] = useState(0);
+  const [trashedPhotos, setTrashedPhotos] = useState<TrashedPhoto[]>([]);
+  const [showTrashModal, setShowTrashModal] = useState(false);
+
+  const TRASH_DIR = `${FileSystem.documentDirectory}trash/`;
 
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
@@ -46,6 +59,8 @@ export default function App() {
 
   useEffect(() => {
     requestPermissionAndLoadPhotos();
+    createTrashDirectory();
+    loadTrashedPhotos();
   }, []);
 
   const requestPermissionAndLoadPhotos = async () => {
@@ -126,11 +141,147 @@ export default function App() {
 
   const deletePhoto = async (photo: Photo) => {
     try {
-      await MediaLibrary.deleteAssetsAsync([photo.id]);
+      // Move to app's trash folder instead of permanently deleting
+      const timestamp = Date.now();
+      const trashFileName = `${timestamp}_${photo.filename}`;
+      const trashPath = `${TRASH_DIR}${trashFileName}`;
+      
+      // Get asset info to get the local URI
+      const assetInfo = await MediaLibrary.getAssetInfoAsync(photo.id);
+      
+      if (assetInfo.localUri) {
+        // Copy photo to trash folder
+        await FileSystem.copyAsync({
+          from: assetInfo.localUri,
+          to: trashPath
+        });
+        
+        // Create trashed photo metadata
+        const trashedPhoto: TrashedPhoto = {
+          ...photo,
+          trashedAt: timestamp,
+          trashPath: trashPath,
+          originalId: photo.id,
+          uri: trashPath // Update URI to point to trash location
+        };
+        
+        // Add to trashed photos
+        setTrashedPhotos(prev => [...prev, trashedPhoto]);
+        
+        // Save trashed photos metadata to persistent storage
+        await saveTrashedPhotosMetadata([...trashedPhotos, trashedPhoto]);
+        
+        // Delete from media library after successful copy
+        await MediaLibrary.deleteAssetsAsync([photo.id]);
+        
+        console.log('Photo moved to trash:', photo.filename);
+      } else {
+        throw new Error('Could not access photo file');
+      }
     } catch (error) {
-      console.error('Error deleting photo:', error);
-      Alert.alert('Error', 'Failed to delete photo');
+      console.error('Error moving photo to trash:', error);
+      Alert.alert('Error', 'Failed to move photo to trash');
     }
+  };
+
+  const createTrashDirectory = async () => {
+    try {
+      const dirInfo = await FileSystem.getInfoAsync(TRASH_DIR);
+      if (!dirInfo.exists) {
+        await FileSystem.makeDirectoryAsync(TRASH_DIR, { intermediates: true });
+      }
+    } catch (error) {
+      console.error('Error creating trash directory:', error);
+    }
+  };
+
+  const loadTrashedPhotos = async () => {
+    try {
+      const metadataPath = `${FileSystem.documentDirectory}trash_metadata.json`;
+      const metadataInfo = await FileSystem.getInfoAsync(metadataPath);
+      
+      if (metadataInfo.exists) {
+        const metadataContent = await FileSystem.readAsStringAsync(metadataPath);
+        const metadata = JSON.parse(metadataContent) as TrashedPhoto[];
+        
+        // Verify files still exist and filter out missing ones
+        const validTrashedPhotos = [];
+        for (const trashedPhoto of metadata) {
+          const fileInfo = await FileSystem.getInfoAsync(trashedPhoto.trashPath);
+          if (fileInfo.exists) {
+            validTrashedPhotos.push(trashedPhoto);
+          }
+        }
+        
+        setTrashedPhotos(validTrashedPhotos);
+        
+        // Update metadata if any files were removed
+        if (validTrashedPhotos.length !== metadata.length) {
+          await saveTrashedPhotosMetadata(validTrashedPhotos);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading trashed photos:', error);
+    }
+  };
+
+  const saveTrashedPhotosMetadata = async (photos: TrashedPhoto[]) => {
+    try {
+      const metadataPath = `${FileSystem.documentDirectory}trash_metadata.json`;
+      await FileSystem.writeAsStringAsync(metadataPath, JSON.stringify(photos));
+    } catch (error) {
+      console.error('Error saving trashed photos metadata:', error);
+    }
+  };
+
+  const restorePhoto = async (trashedPhoto: TrashedPhoto) => {
+    try {
+      // Create asset back in media library
+      const restoredAsset = await MediaLibrary.createAssetAsync(trashedPhoto.trashPath);
+      
+      // Remove from trash folder
+      await FileSystem.deleteAsync(trashedPhoto.trashPath);
+      
+      // Remove from trashed photos list
+      const updatedTrashedPhotos = trashedPhotos.filter(tp => tp.trashedAt !== trashedPhoto.trashedAt);
+      setTrashedPhotos(updatedTrashedPhotos);
+      await saveTrashedPhotosMetadata(updatedTrashedPhotos);
+      
+      Alert.alert('Success', 'Photo restored successfully!');
+    } catch (error) {
+      console.error('Error restoring photo:', error);
+      Alert.alert('Error', 'Failed to restore photo');
+    }
+  };
+
+  const emptyTrash = async () => {
+    Alert.alert(
+      'Empty Trash',
+      'Are you sure you want to permanently delete all trashed photos? This cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete All',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              // Delete all files in trash directory
+              await FileSystem.deleteAsync(TRASH_DIR, { idempotent: true });
+              await createTrashDirectory();
+              
+              // Clear metadata
+              setTrashedPhotos([]);
+              await saveTrashedPhotosMetadata([]);
+              
+              Alert.alert('Success', 'Trash emptied successfully');
+            } catch (error) {
+              console.error('Error emptying trash:', error);
+              Alert.alert('Error', 'Failed to empty trash');
+            }
+          }
+        }
+      ]
+    );
   };
 
   const resetCards = () => {
@@ -214,7 +365,7 @@ export default function App() {
     return (
       <GestureHandlerRootView style={styles.container}>
         <LinearGradient
-          colors={['#FF6B9D', '#C44569', '#F8B500']}
+          colors={['#3B82F6', '#1D4ED8', '#1E40AF']}
           style={styles.container}
         >
           <SafeAreaView style={styles.safeArea}>
@@ -229,7 +380,7 @@ export default function App() {
     return (
       <GestureHandlerRootView style={styles.container}>
         <LinearGradient
-          colors={['#FF6B9D', '#C44569', '#F8B500']}
+          colors={['#3B82F6', '#1D4ED8', '#1E40AF']}
           style={styles.container}
         >
           <SafeAreaView style={styles.safeArea}>
@@ -252,10 +403,18 @@ export default function App() {
     return (
       <GestureHandlerRootView style={styles.container}>
         <LinearGradient
-          colors={['#FF6B9D', '#C44569', '#F8B500']}
+          colors={['#4A90E2', '#2C5AA0', '#1E3A8A']}
           style={styles.container}
         >
           <SafeAreaView style={styles.safeArea}>
+            <View style={styles.header}>
+              <View style={styles.headerTop}>
+                <Text style={styles.title}>SwipeClean</Text>
+                <TouchableOpacity style={styles.trashButton} onPress={() => setShowTrashModal(true)}>
+                  <Text style={styles.trashButtonText}>🗑️ Trash ({trashedPhotos.length})</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
             <View style={styles.completedContainer}>
               <Text style={styles.completedTitle}>All Done! 🎉</Text>
               <Text style={styles.completedText}>
@@ -275,6 +434,58 @@ export default function App() {
                 <Text style={styles.resetButtonText}>Review More Photos</Text>
               </TouchableOpacity>
             </View>
+
+            {/* Trash Modal */}
+            <Modal
+              visible={showTrashModal}
+              animationType="slide"
+              presentationStyle="pageSheet"
+            >
+              <SafeAreaView style={styles.modalContainer}>
+                <LinearGradient
+                  colors={['#4A90E2', '#2C5AA0', '#1E3A8A']}
+                  style={styles.modalGradient}
+                >
+                  <View style={styles.modalHeader}>
+                    <TouchableOpacity onPress={() => setShowTrashModal(false)}>
+                      <Text style={styles.closeButton}>✕</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.modalTitle}>Trash ({trashedPhotos.length})</Text>
+                    {trashedPhotos.length > 0 && (
+                      <TouchableOpacity onPress={emptyTrash}>
+                        <Text style={styles.emptyTrashButton}>Empty</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                  
+                  {trashedPhotos.length === 0 ? (
+                    <View style={styles.emptyTrashContainer}>
+                      <Text style={styles.emptyTrashText}>🗑️</Text>
+                      <Text style={styles.emptyTrashMessage}>Trash is empty</Text>
+                    </View>
+                  ) : (
+                    <ScrollView style={styles.trashGrid} contentContainerStyle={styles.trashGridContent}>
+                      {trashedPhotos.map((photo) => (
+                        <View key={photo.trashedAt} style={styles.trashItem}>
+                          <Image source={{ uri: photo.uri }} style={styles.trashPhoto} />
+                          <View style={styles.trashActions}>
+                            <TouchableOpacity
+                              style={styles.restoreButton}
+                              onPress={() => restorePhoto(photo)}
+                            >
+                              <Text style={styles.restoreButtonText}>Restore</Text>
+                            </TouchableOpacity>
+                          </View>
+                          <Text style={styles.trashDate}>
+                            {new Date(photo.trashedAt).toLocaleDateString()}
+                          </Text>
+                        </View>
+                      ))}
+                    </ScrollView>
+                  )}
+                </LinearGradient>
+              </SafeAreaView>
+            </Modal>
           </SafeAreaView>
         </LinearGradient>
       </GestureHandlerRootView>
@@ -286,14 +497,19 @@ export default function App() {
   return (
     <GestureHandlerRootView style={styles.container}>
       <LinearGradient
-        colors={['#FF6B9D', '#C44569', '#F8B500']}
+        colors={['#4A90E2', '#2C5AA0', '#1E3A8A']}
         style={styles.container}
       >
         <StatusBar barStyle="light-content" />
         <SafeAreaView style={styles.safeArea}>
         {/* Header */}
         <View style={styles.header}>
-          <Text style={styles.title}>SwipeClean</Text>
+          <View style={styles.headerTop}>
+            <Text style={styles.title}>SwipeClean</Text>
+            <TouchableOpacity style={styles.trashButton} onPress={() => setShowTrashModal(true)}>
+              <Text style={styles.trashButtonText}>🗑️ Trash ({trashedPhotos.length})</Text>
+            </TouchableOpacity>
+          </View>
           <View style={styles.stats}>
             <View style={styles.statBadge}>
               <Text style={styles.statBadgeText}>Kept: {keptCount}</Text>
@@ -345,6 +561,58 @@ export default function App() {
             Swipe right to keep • Swipe left to delete
           </Text>
         </View>
+
+        {/* Trash Modal */}
+        <Modal
+          visible={showTrashModal}
+          animationType="slide"
+          presentationStyle="pageSheet"
+        >
+          <SafeAreaView style={styles.modalContainer}>
+            <LinearGradient
+              colors={['#4A90E2', '#2C5AA0', '#1E3A8A']}
+              style={styles.modalGradient}
+            >
+              <View style={styles.modalHeader}>
+                <TouchableOpacity onPress={() => setShowTrashModal(false)}>
+                  <Text style={styles.closeButton}>✕</Text>
+                </TouchableOpacity>
+                <Text style={styles.modalTitle}>Trash ({trashedPhotos.length})</Text>
+                {trashedPhotos.length > 0 && (
+                  <TouchableOpacity onPress={emptyTrash}>
+                    <Text style={styles.emptyTrashButton}>Empty</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+              
+              {trashedPhotos.length === 0 ? (
+                <View style={styles.emptyTrashContainer}>
+                  <Text style={styles.emptyTrashText}>🗑️</Text>
+                  <Text style={styles.emptyTrashMessage}>Trash is empty</Text>
+                </View>
+              ) : (
+                <ScrollView style={styles.trashGrid} contentContainerStyle={styles.trashGridContent}>
+                  {trashedPhotos.map((photo) => (
+                    <View key={photo.trashedAt} style={styles.trashItem}>
+                      <Image source={{ uri: photo.uri }} style={styles.trashPhoto} />
+                      <View style={styles.trashActions}>
+                        <TouchableOpacity
+                          style={styles.restoreButton}
+                          onPress={() => restorePhoto(photo)}
+                        >
+                          <Text style={styles.restoreButtonText}>Restore</Text>
+                        </TouchableOpacity>
+                      </View>
+                      <Text style={styles.trashDate}>
+                        {new Date(photo.trashedAt).toLocaleDateString()}
+                      </Text>
+                    </View>
+                  ))}
+                </ScrollView>
+              )}
+            </LinearGradient>
+          </SafeAreaView>
+        </Modal>
       </SafeAreaView>
     </LinearGradient>
   </GestureHandlerRootView>
@@ -368,11 +636,10 @@ const styles = StyleSheet.create({
     fontSize: 32,
     fontWeight: 'bold',
     color: 'white',
-    textAlign: 'center',
-    marginBottom: 15,
     textShadowColor: 'rgba(0, 0, 0, 0.3)',
     textShadowOffset: { width: 2, height: 2 },
     textShadowRadius: 4,
+    flex: 1,
   },
   stats: {
     flexDirection: 'row',
@@ -495,7 +762,7 @@ const styles = StyleSheet.create({
   permissionButtonText: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#FF6B9D',
+    color: '#4A90E2',
   },
   completedContainer: {
     flex: 1,
@@ -544,6 +811,108 @@ const styles = StyleSheet.create({
   resetButtonText: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#FF6B9D',
+    color: '#4A90E2',
+  },
+  // Header styles
+  headerTop: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 15,
+  },
+  trashButton: {
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 15,
+  },
+  trashButtonText: {
+    color: 'white',
+    fontWeight: '600',
+    fontSize: 12,
+  },
+  // Modal styles
+  modalContainer: {
+    flex: 1,
+  },
+  modalGradient: {
+    flex: 1,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 15,
+  },
+  closeButton: {
+    fontSize: 24,
+    color: 'white',
+    fontWeight: 'bold',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: 'white',
+  },
+  emptyTrashButton: {
+    fontSize: 16,
+    color: 'white',
+    fontWeight: '600',
+  },
+  emptyTrashContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyTrashText: {
+    fontSize: 64,
+    marginBottom: 20,
+  },
+  emptyTrashMessage: {
+    fontSize: 18,
+    color: 'white',
+    fontWeight: '500',
+  },
+  trashGrid: {
+    flex: 1,
+    paddingHorizontal: 20,
+  },
+  trashGridContent: {
+    paddingBottom: 20,
+  },
+  trashItem: {
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderRadius: 12,
+    marginBottom: 15,
+    overflow: 'hidden',
+  },
+  trashPhoto: {
+    width: '100%',
+    height: 200,
+    resizeMode: 'cover',
+  },
+  trashActions: {
+    padding: 15,
+    flexDirection: 'row',
+    justifyContent: 'center',
+  },
+  restoreButton: {
+    backgroundColor: '#4CD964',
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  restoreButtonText: {
+    color: 'white',
+    fontWeight: '600',
+    fontSize: 14,
+  },
+  trashDate: {
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontSize: 12,
+    textAlign: 'center',
+    paddingBottom: 10,
   },
 });
