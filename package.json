@@ -3,16 +3,27 @@
   "version": "1.0.0",
   "main": "index.ts",
   "scripts": {
-    "start": "expo start",
+    "start": "expo start --clear",
+    "dev": "expo start --clear",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "build:android": "eas build --platform android --profile production",
+    "build:dev": "eas build --platform android --profile development",
+    "doctor": "npx expo-doctor",
+    "check": "npx expo install --check"
   },
   "dependencies": {
+    "@react-native-async-storage/async-storage": "^2.1.2",
     "expo": "~53.0.22",
+    "expo-linear-gradient": "^14.1.5",
+    "expo-media-library": "^17.1.7",
     "expo-status-bar": "~2.2.3",
     "react": "19.0.0",
-    "react-native": "0.79.6"
+    "react-native": "0.79.5",
+    "react-native-gesture-handler": "~2.24.0",
+    "react-native-reanimated": "~3.17.4",
+    "expo-dev-client": "~5.2.4"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
