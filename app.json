@@ -24,6 +24,7 @@
         "backgroundColor": "#2563EB"
       },
       "edgeToEdgeEnabled": true,
+      "versionCode": 1,
       "permissions": [
         "READ_EXTERNAL_STORAGE",
         "WRITE_EXTERNAL_STORAGE",
@@ -50,6 +51,13 @@
     "extra": {
       "eas": {
         "projectId": "a2edeb8c-0f86-44a2-9487-ac210bb920eb"
+      },
+      "storeListing": {
+        "title": "SwipeClean - Photo Organizer",
+        "shortDescription": "Organize photos with simple swipe gestures - keep right, delete left",
+        "fullDescription": "SwipeClean makes photo organization effortless and fun! Clean up your camera roll with intuitive swipe gestures. Swipe right to keep photos, left to delete them. Features trash recovery, beautiful blue interface, and smooth workflow without confirmation dialogs. Perfect for organizing vacation photos, cleaning screenshots, and freeing up storage space.",
+        "category": "Photography",
+        "keywords": ["photo", "organizer", "swipe", "clean", "gallery", "storage", "trash", "delete", "organize"]
       }
     }
   }

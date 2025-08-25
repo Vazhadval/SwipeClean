@@ -65,18 +65,30 @@ export default function App() {
 
   const requestPermissionAndLoadPhotos = async () => {
     try {
-      const { status } = await MediaLibrary.requestPermissionsAsync();
+      // Request both read and write permissions for full access
+      const { status, accessPrivileges } = await MediaLibrary.requestPermissionsAsync(false); // false = read and write
+      
+      console.log('Permission status:', status, 'Access privileges:', accessPrivileges);
       
       if (status === 'granted') {
         setHasPermission(true);
         await loadPhotos();
+        
+        // Show info about delete permissions
+        if (accessPrivileges === 'limited') {
+          Alert.alert(
+            'Limited Access',
+            'You have granted limited photo access. For best experience, consider allowing full access in Settings.',
+            [{ text: 'OK' }]
+          );
+        }
       } else {
         Alert.alert(
           'Permission Required',
-          'This app needs access to your photos to work properly.',
+          'This app needs full access to your photos to organize and delete them. Please grant permission in the next dialog.',
           [
             { text: 'Cancel', style: 'cancel' },
-            { text: 'Open Settings', onPress: () => MediaLibrary.requestPermissionsAsync() }
+            { text: 'Grant Permission', onPress: () => MediaLibrary.requestPermissionsAsync(false) }
           ]
         );
       }

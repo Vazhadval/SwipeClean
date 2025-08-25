@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SwipeClean Feature Graphic</title>
+    <style>
+        .feature-graphic {
+            width: 1024px;
+            height: 500px;
+            background: linear-gradient(135deg, #4A90E2, #2C5AA0, #1E3A8A);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 40px 60px;
+            color: white;
+            font-family: 'Arial', sans-serif;
+            box-sizing: border-box;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .content {
+            flex: 1;
+            z-index: 2;
+        }
+        
+        .title {
+            font-size: 48px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+        
+        .subtitle {
+            font-size: 24px;
+            margin-bottom: 20px;
+            opacity: 0.9;
+        }
+        
+        .features {
+            font-size: 18px;
+            line-height: 1.6;
+        }
+        
+        .logo-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex: 0 0 300px;
+            z-index: 2;
+        }
+        
+        .logo-placeholder {
+            width: 200px;
+            height: 200px;
+            background: rgba(255,255,255,0.2);
+            border-radius: 50px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            text-align: center;
+            backdrop-filter: blur(10px);
+            border: 2px solid rgba(255,255,255,0.3);
+        }
+        
+        .swipe-arrows {
+            position: absolute;
+            right: 80px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 60px;
+            opacity: 0.6;
+            animation: pulse 2s infinite;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 0.6; }
+            50% { opacity: 1; }
+        }
+        
+        .decoration {
+            position: absolute;
+            background: rgba(255,255,255,0.1);
+            border-radius: 50%;
+        }
+        
+        .decoration1 {
+            width: 150px;
+            height: 150px;
+            top: -75px;
+            right: 200px;
+        }
+        
+        .decoration2 {
+            width: 100px;
+            height: 100px;
+            bottom: -50px;
+            left: 150px;
+        }
+    </style>
+</head>
+<body>
+    <div class="feature-graphic">
+        <div class="decoration decoration1"></div>
+        <div class="decoration decoration2"></div>
+        
+        <div class="content">
+            <div class="title">SwipeClean</div>
+            <div class="subtitle">Photo Organizer</div>
+            <div class="features">
+                ✨ Swipe right to keep<br>
+                ← Swipe left to delete<br>
+                🗑️ Trash with recovery<br>
+                🎨 Beautiful interface
+            </div>
+        </div>
+        
+        <div class="logo-container">
+            <div class="logo-placeholder">
+                Your Logo Here<br>
+                (Replace with<br>logo.png)
+            </div>
+        </div>
+        
+        <div class="swipe-arrows">
+            ← →
+        </div>
+    </div>
+    
+    <script>
+        // Instructions for creating the actual feature graphic
+        console.log(`
+To create the actual feature graphic:
+1. Open this HTML file in a browser
+2. Replace the logo placeholder with your actual logo.png
+3. Take a screenshot at exactly 1024x500px
+4. Or use design tools like Canva, Figma, or Photoshop with these specifications:
+   - Size: 1024x500px
+   - Background: Linear gradient #4A90E2 to #1E3A8A
+   - Include your logo.png
+   - Add the SwipeClean text and features
+   - Save as PNG or JPG
+        `);
+    </script>
+</body>
+</html>
