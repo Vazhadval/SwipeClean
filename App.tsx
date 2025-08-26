@@ -16,9 +16,8 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import * as MediaLibrary from 'expo-media-library';
 import * as FileSystem from 'expo-file-system';
-import { PanGestureHandler, State, GestureHandlerRootView } from 'react-native-gesture-handler';
+import { GestureHandlerRootView, Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
-  useAnimatedGestureHandler,
   useAnimatedStyle,
   useSharedValue,
   withSpring,
@@ -473,17 +472,17 @@ export default function App() {
     loadPhotos();
   };
 
-  const gestureHandler = useAnimatedGestureHandler({
-    onStart: () => {
+  const gestureHandler = Gesture.Pan()
+    .onBegin(() => {
       console.log('Gesture started');
       scale.value = withSpring(0.95);
-    },
-    onActive: (event: any) => {
+    })
+    .onUpdate((event) => {
       translateX.value = event.translationX;
       translateY.value = event.translationY;
       rotate.value = event.translationX * 0.1;
-    },
-    onEnd: (event: any) => {
+    })
+    .onFinalize((event) => {
       console.log('Gesture ended with translationX:', event.translationX);
       const shouldSwipe = Math.abs(event.translationX) > screenWidth * 0.2; // Reduced threshold
       
@@ -506,8 +505,7 @@ export default function App() {
         rotate.value = withSpring(0);
         scale.value = withSpring(1);
       }
-    },
-  });
+    });
 
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [
@@ -739,7 +737,7 @@ export default function App() {
           {photos.slice(currentPhotoIndex, currentPhotoIndex + 2).map((photo, index) => {
             if (index === 0) {
               return (
-                <PanGestureHandler key={photo.id} onGestureEvent={gestureHandler}>
+                <GestureDetector key={photo.id} gesture={gestureHandler}>
                   <Animated.View style={[styles.cardContainer, animatedStyle]}>
                     <View style={styles.card}>
                       <Image source={{ uri: photo.uri }} style={styles.photo} />
@@ -755,7 +753,7 @@ export default function App() {
                       </Animated.View>
                     </View>
                   </Animated.View>
-                </PanGestureHandler>
+                </GestureDetector>
               );
             } else {
               return (
