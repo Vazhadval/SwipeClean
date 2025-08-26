@@ -45,6 +45,8 @@ export default function App() {
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
   const [hasPermission, setHasPermission] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadingProgress, setLoadingProgress] = useState(0);
+  const [loadingMessage, setLoadingMessage] = useState('Preparing...');
   const [keptCount, setKeptCount] = useState(0);
   const [deletedCount, setDeletedCount] = useState(0);
   const [trashedPhotos, setTrashedPhotos] = useState<TrashedPhoto[]>([]);
@@ -57,11 +59,74 @@ export default function App() {
   const rotate = useSharedValue(0);
   const scale = useSharedValue(1);
 
+  // Animation values for loading dots
+  const dot1Opacity = useSharedValue(0.5);
+  const dot2Opacity = useSharedValue(0.5);
+  const dot3Opacity = useSharedValue(0.5);
+  const dot1Scale = useSharedValue(1);
+  const dot2Scale = useSharedValue(1);
+  const dot3Scale = useSharedValue(1);
+
   useEffect(() => {
     requestPermissionAndLoadPhotos();
     createTrashDirectory();
     loadTrashedPhotos();
   }, []);
+
+  // Animate loading dots
+  useEffect(() => {
+    if (loading) {
+      const animateDots = () => {
+        // Animate dot 1
+        dot1Opacity.value = withTiming(1, { duration: 600 }, () => {
+          dot1Opacity.value = withTiming(0.3, { duration: 600 });
+        });
+        dot1Scale.value = withTiming(1.2, { duration: 600 }, () => {
+          dot1Scale.value = withTiming(0.8, { duration: 600 });
+        });
+
+        // Animate dot 2 with delay
+        setTimeout(() => {
+          dot2Opacity.value = withTiming(1, { duration: 600 }, () => {
+            dot2Opacity.value = withTiming(0.3, { duration: 600 });
+          });
+          dot2Scale.value = withTiming(1.2, { duration: 600 }, () => {
+            dot2Scale.value = withTiming(0.8, { duration: 600 });
+          });
+        }, 200);
+
+        // Animate dot 3 with delay
+        setTimeout(() => {
+          dot3Opacity.value = withTiming(1, { duration: 600 }, () => {
+            dot3Opacity.value = withTiming(0.3, { duration: 600 });
+          });
+          dot3Scale.value = withTiming(1.2, { duration: 600 }, () => {
+            dot3Scale.value = withTiming(0.8, { duration: 600 });
+          });
+        }, 400);
+      };
+
+      animateDots();
+      const interval = setInterval(animateDots, 1200);
+      return () => clearInterval(interval);
+    }
+  }, [loading]);
+
+  // Animated styles for dots (always declared, but only used when loading)
+  const dot1AnimatedStyle = useAnimatedStyle(() => ({
+    opacity: dot1Opacity.value,
+    transform: [{ scale: dot1Scale.value }]
+  }));
+
+  const dot2AnimatedStyle = useAnimatedStyle(() => ({
+    opacity: dot2Opacity.value,
+    transform: [{ scale: dot2Scale.value }]
+  }));
+
+  const dot3AnimatedStyle = useAnimatedStyle(() => ({
+    opacity: dot3Opacity.value,
+    transform: [{ scale: dot3Scale.value }]
+  }));
 
   const requestPermissionAndLoadPhotos = async () => {
     try {
@@ -102,11 +167,46 @@ export default function App() {
 
   const loadPhotos = async () => {
     try {
+      setLoadingProgress(5);
+      setLoadingMessage('Preparing photo scanner...');
+      await new Promise(resolve => setTimeout(resolve, 200));
+
+      setLoadingProgress(15);
+      setLoadingMessage('Scanning photo library...');
+      await new Promise(resolve => setTimeout(resolve, 300));
+
+      // First, get the total count of photos
+      const initialMedia = await MediaLibrary.getAssetsAsync({
+        mediaType: 'photo',
+        first: 1,
+      });
+
+      setLoadingProgress(25);
+      setLoadingMessage(`Found ${initialMedia.totalCount} photos`);
+      await new Promise(resolve => setTimeout(resolve, 400));
+
+      setLoadingProgress(35);
+      setLoadingMessage('Initializing photo loader...');
+      await new Promise(resolve => setTimeout(resolve, 300));
+
+      setLoadingProgress(45);
+      setLoadingMessage('Loading all photos...');
+      await new Promise(resolve => setTimeout(resolve, 200));
+
+      // Now load ALL photos
       const media = await MediaLibrary.getAssetsAsync({
         mediaType: 'photo',
-        first: 50,
+        first: initialMedia.totalCount, // Load all photos
         sortBy: 'creationTime',
       });
+
+      setLoadingProgress(60);
+      setLoadingMessage('Photos loaded successfully...');
+      await new Promise(resolve => setTimeout(resolve, 300));
+
+      setLoadingProgress(70);
+      setLoadingMessage('Processing photo data...');
+      await new Promise(resolve => setTimeout(resolve, 250));
 
       const photoData: Photo[] = media.assets.map((asset) => ({
         id: asset.id,
@@ -114,12 +214,42 @@ export default function App() {
         filename: asset.filename,
       }));
 
-      // Shuffle photos for random display
-      const shuffledPhotos = photoData.sort(() => Math.random() - 0.5);
+      setLoadingProgress(80);
+      setLoadingMessage('Preparing random shuffle...');
+      await new Promise(resolve => setTimeout(resolve, 300));
+
+      setLoadingProgress(88);
+      setLoadingMessage('Shuffling photos for random display...');
+
+      // Fisher-Yates shuffle algorithm for truly random distribution
+      const shuffleArray = (array: Photo[]) => {
+        const shuffled = [...array]; // Create a copy
+        for (let i = shuffled.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+        return shuffled;
+      };
+
+      const shuffledPhotos = shuffleArray(photoData);
+      
+      setLoadingProgress(95);
+      setLoadingMessage('Finalizing setup...');
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
       setPhotos(shuffledPhotos);
+      setLoadingProgress(100);
+      setLoadingMessage('Ready to swipe!');
+      
+      // Delay before hiding loader
+      setTimeout(() => {
+        setLoading(false);
+      }, 400);
+      
     } catch (error) {
       console.error('Error loading photos:', error);
       Alert.alert('Error', 'Failed to load photos');
+      setLoading(false);
     }
   };
 
@@ -377,11 +507,47 @@ export default function App() {
     return (
       <GestureHandlerRootView style={styles.container}>
         <LinearGradient
-          colors={['#3B82F6', '#1D4ED8', '#1E40AF']}
+          colors={['#4A90E2', '#2C5AA0', '#1E3A8A']}
           style={styles.container}
         >
           <SafeAreaView style={styles.safeArea}>
-            <Text style={styles.loadingText}>Loading your photos...</Text>
+            <View style={styles.loadingContainer}>
+              {/* Logo */}
+              <View style={styles.logoContainer}>
+                <Image 
+                  source={require('./assets/logo.png')} 
+                  style={styles.logoImage}
+                  resizeMode="contain"
+                />
+                <Text style={styles.appName}>SwipeClean</Text>
+              </View>
+
+              {/* Progress Container */}
+              <View style={styles.progressContainer}>
+                <Text style={styles.loadingMessage}>{loadingMessage}</Text>
+                
+                {/* Progress Bar Background */}
+                <View style={styles.progressBarBackground}>
+                  {/* Progress Bar Fill */}
+                  <Animated.View 
+                    style={[
+                      styles.progressBarFill,
+                      { width: `${loadingProgress}%` }
+                    ]}
+                  />
+                </View>
+
+                {/* Progress Percentage */}
+                <Text style={styles.progressText}>{loadingProgress}%</Text>
+              </View>
+
+              {/* Loading Animation Dots */}
+              <View style={styles.dotsContainer}>
+                <Animated.View style={[styles.dot, dot1AnimatedStyle]} />
+                <Animated.View style={[styles.dot, dot2AnimatedStyle]} />
+                <Animated.View style={[styles.dot, dot3AnimatedStyle]} />
+              </View>
+            </View>
           </SafeAreaView>
         </LinearGradient>
       </GestureHandlerRootView>
@@ -926,5 +1092,86 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textAlign: 'center',
     paddingBottom: 10,
+  },
+  // Loading screen styles
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 40,
+  },
+  logoContainer: {
+    alignItems: 'center',
+    marginBottom: 60,
+  },
+  logoImage: {
+    width: 120,
+    height: 120,
+    marginBottom: 20,
+    borderRadius: 30,
+    shadowColor: 'rgba(255, 255, 255, 0.3)',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.8,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  logoText: {
+    fontSize: 80,
+    marginBottom: 10,
+  },
+  appName: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: 'white',
+    textAlign: 'center',
+  },
+  progressContainer: {
+    width: '100%',
+    alignItems: 'center',
+    marginBottom: 40,
+  },
+  loadingMessage: {
+    fontSize: 18,
+    color: 'white',
+    textAlign: 'center',
+    marginBottom: 20,
+    opacity: 0.9,
+  },
+  progressBarBackground: {
+    width: '100%',
+    height: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 4,
+    overflow: 'hidden',
+    marginBottom: 10,
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: 'white',
+    borderRadius: 4,
+    shadowColor: 'white',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  progressText: {
+    fontSize: 16,
+    color: 'white',
+    fontWeight: '600',
+    opacity: 0.8,
+  },
+  dotsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  dot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: 'white',
+    marginHorizontal: 6,
+    opacity: 0.5,
   },
 });
