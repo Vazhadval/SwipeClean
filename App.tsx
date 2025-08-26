@@ -26,6 +26,42 @@ import Animated, {
   runOnJS,
 } from 'react-native-reanimated';
 
+/**
+ * THEME COLORS - Update all app colors here!
+ * 
+ * To change the app's theme:
+ * 1. Update gradient colors for background
+ * 2. Update accent color for buttons and highlights
+ * 3. Update text colors for readability
+ * 4. Update UI element colors as needed
+ * 
+ * All colors throughout the app will automatically update!
+ */
+const THEME_COLORS = {
+  // Main gradient colors (dark navy to deep blue)
+  gradient: ['#1a1a2e', '#16213e', '#0f3460'] as const,
+  
+  // Accent colors
+  accent: '#00ffd0', // Bright teal for buttons and highlights
+  
+  // Text colors
+  primaryText: '#ffffff',
+  secondaryText: '#e0e0e0',
+  
+  // UI elements
+  cardBackground: '#ffffff',
+  overlayBackground: 'rgba(0, 0, 0, 0.8)',
+  
+  // Swipe gesture colors
+  keepColor: 'rgba(76, 217, 100, 0.9)', // Green for keep
+  deleteColor: 'rgba(255, 59, 48, 0.9)', // Red for delete
+  
+  // Shadow and transparency
+  shadowColor: '#000',
+  textShadow: 'rgba(0, 0, 0, 0.3)',
+  buttonOverlay: 'rgba(255, 255, 255, 0.2)',
+};
+
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
 interface Photo {
@@ -507,7 +543,7 @@ export default function App() {
     return (
       <GestureHandlerRootView style={styles.container}>
         <LinearGradient
-          colors={['#4A90E2', '#2C5AA0', '#1E3A8A']}
+          colors={THEME_COLORS.gradient}
           style={styles.container}
         >
           <SafeAreaView style={styles.safeArea}>
@@ -558,7 +594,7 @@ export default function App() {
     return (
       <GestureHandlerRootView style={styles.container}>
         <LinearGradient
-          colors={['#3B82F6', '#1D4ED8', '#1E40AF']}
+          colors={THEME_COLORS.gradient}
           style={styles.container}
         >
           <SafeAreaView style={styles.safeArea}>
@@ -581,7 +617,7 @@ export default function App() {
     return (
       <GestureHandlerRootView style={styles.container}>
         <LinearGradient
-          colors={['#4A90E2', '#2C5AA0', '#1E3A8A']}
+          colors={THEME_COLORS.gradient}
           style={styles.container}
         >
           <SafeAreaView style={styles.safeArea}>
@@ -621,7 +657,7 @@ export default function App() {
             >
               <SafeAreaView style={styles.modalContainer}>
                 <LinearGradient
-                  colors={['#4A90E2', '#2C5AA0', '#1E3A8A']}
+                  colors={THEME_COLORS.gradient}
                   style={styles.modalGradient}
                 >
                   <View style={styles.modalHeader}>
@@ -675,7 +711,7 @@ export default function App() {
   return (
     <GestureHandlerRootView style={styles.container}>
       <LinearGradient
-        colors={['#4A90E2', '#2C5AA0', '#1E3A8A']}
+        colors={THEME_COLORS.gradient}
         style={styles.container}
       >
         <StatusBar barStyle="light-content" />
@@ -748,7 +784,7 @@ export default function App() {
         >
           <SafeAreaView style={styles.modalContainer}>
             <LinearGradient
-              colors={['#4A90E2', '#2C5AA0', '#1E3A8A']}
+              colors={THEME_COLORS.gradient}
               style={styles.modalGradient}
             >
               <View style={styles.modalHeader}>
@@ -878,15 +914,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   keepOverlay: {
-    backgroundColor: 'rgba(76, 217, 100, 0.9)',
+    backgroundColor: THEME_COLORS.keepColor,
   },
   deleteOverlay: {
-    backgroundColor: 'rgba(255, 59, 48, 0.9)',
+    backgroundColor: THEME_COLORS.deleteColor,
   },
   overlayText: {
     fontSize: 32,
     fontWeight: 'bold',
-    color: 'white',
+    color: THEME_COLORS.primaryText,
     textShadowColor: 'rgba(0, 0, 0, 0.5)',
     textShadowOffset: { width: 2, height: 2 },
     textShadowRadius: 4,
@@ -940,7 +976,7 @@ const styles = StyleSheet.create({
   permissionButtonText: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#4A90E2',
+    color: THEME_COLORS.accent,
   },
   completedContainer: {
     flex: 1,
@@ -989,7 +1025,7 @@ const styles = StyleSheet.create({
   resetButtonText: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#4A90E2',
+    color: THEME_COLORS.accent,
   },
   // Header styles
   headerTop: {
