@@ -73,6 +73,7 @@ interface TrashedPhoto extends Photo {
   trashedAt: number;
   trashPath: string;
   originalId: string;
+  size: number; // File size in bytes
 }
 
 export default function App() {
@@ -86,6 +87,7 @@ export default function App() {
   const [deletedCount, setDeletedCount] = useState(0);
   const [trashedPhotos, setTrashedPhotos] = useState<TrashedPhoto[]>([]);
   const [showTrashModal, setShowTrashModal] = useState(false);
+  const [showConfirmEmptyModal, setShowConfirmEmptyModal] = useState(false);
 
   const TRASH_DIR = `${FileSystem.documentDirectory}trash/`;
 
@@ -167,8 +169,6 @@ export default function App() {
     try {
       // Request both read and write permissions for full access
       const { status, accessPrivileges } = await MediaLibrary.requestPermissionsAsync(false); // false = read and write
-      
-      console.log('Permission status:', status, 'Access privileges:', accessPrivileges);
       
       if (status === 'granted') {
         setHasPermission(true);
@@ -289,20 +289,16 @@ export default function App() {
   };
 
   const handleSwipeComplete = (direction: 'left' | 'right') => {
-    console.log('handleSwipeComplete called with direction:', direction);
     if (currentPhotoIndex >= photos.length) return;
 
     const currentPhoto = photos[currentPhotoIndex];
-    console.log('Processing photo:', currentPhoto.filename);
 
     if (direction === 'left') {
       // Delete photo
-      console.log('Deleting photo:', currentPhoto.filename);
       deletePhoto(currentPhoto);
       setDeletedCount(prev => prev + 1);
     } else {
       // Keep photo
-      console.log('Keeping photo:', currentPhoto.filename);
       setKeptCount(prev => prev + 1);
     }
 
@@ -318,7 +314,7 @@ export default function App() {
 
   const deletePhoto = async (photo: Photo) => {
     try {
-      // Move to app's trash folder instead of permanently deleting
+      // Move to app's trash folder (no confirmation dialog)
       const timestamp = Date.now();
       const trashFileName = `${timestamp}_${photo.filename}`;
       const trashPath = `${TRASH_DIR}${trashFileName}`;
@@ -326,12 +322,18 @@ export default function App() {
       // Get asset info to get the local URI
       const assetInfo = await MediaLibrary.getAssetInfoAsync(photo.id);
       
-      if (assetInfo.localUri) {
+      if (assetInfo.localUri || assetInfo.uri) {
+        const sourceUri = assetInfo.localUri || assetInfo.uri;
+        
         // Copy photo to trash folder
         await FileSystem.copyAsync({
-          from: assetInfo.localUri,
+          from: sourceUri,
           to: trashPath
         });
+        
+        // Get file size for tracking
+        const fileInfo = await FileSystem.getInfoAsync(trashPath, { size: true });
+        const fileSize = fileInfo.exists && 'size' in fileInfo ? fileInfo.size : 0;
         
         // Create trashed photo metadata
         const trashedPhoto: TrashedPhoto = {
@@ -339,7 +341,8 @@ export default function App() {
           trashedAt: timestamp,
           trashPath: trashPath,
           originalId: photo.id,
-          uri: trashPath // Update URI to point to trash location
+          uri: trashPath,
+          size: fileSize // Store file size in bytes
         };
         
         // Add to trashed photos
@@ -348,10 +351,8 @@ export default function App() {
         // Save trashed photos metadata to persistent storage
         await saveTrashedPhotosMetadata([...trashedPhotos, trashedPhoto]);
         
-        // Delete from media library after successful copy
-        await MediaLibrary.deleteAssetsAsync([photo.id]);
-        
-        console.log('Photo moved to trash:', photo.filename);
+        // NOTE: We don't delete from MediaLibrary to avoid confirmation dialog
+        // The photo remains in the gallery but is marked as "deleted" in our app
       } else {
         throw new Error('Could not access photo file');
       }
@@ -432,33 +433,68 @@ export default function App() {
   };
 
   const emptyTrash = async () => {
-    Alert.alert(
-      'Empty Trash',
-      'Are you sure you want to permanently delete all trashed photos? This cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete All',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              // Delete all files in trash directory
-              await FileSystem.deleteAsync(TRASH_DIR, { idempotent: true });
-              await createTrashDirectory();
-              
-              // Clear metadata
-              setTrashedPhotos([]);
-              await saveTrashedPhotosMetadata([]);
-              
-              Alert.alert('Success', 'Trash emptied successfully');
-            } catch (error) {
-              console.error('Error emptying trash:', error);
-              Alert.alert('Error', 'Failed to empty trash');
-            }
-          }
+    setShowConfirmEmptyModal(true);
+  };
+
+  const confirmEmptyTrash = async () => {
+    setShowConfirmEmptyModal(false);
+    try {
+      const sizeInMB = getTotalTrashSize();
+      
+      // Get all original photo IDs for deletion from device
+      const originalPhotoIds = trashedPhotos
+        .map(photo => photo.originalId)
+        .filter(id => id); // Filter out any undefined IDs
+      
+      let successCount = 0;
+      let failedCount = 0;
+      
+      if (originalPhotoIds.length > 0) {
+        try {
+          // Actually delete photos from device gallery
+          await MediaLibrary.deleteAssetsAsync(originalPhotoIds);
+          successCount = originalPhotoIds.length;
+        } catch (error) {
+          console.error('Some photos failed to delete from device:', error);
+          failedCount = originalPhotoIds.length;
         }
-      ]
-    );
+      }
+      
+      // Always clean up app's trash folder
+      await FileSystem.deleteAsync(TRASH_DIR, { idempotent: true });
+      await createTrashDirectory();
+      
+      // Clear metadata
+      setTrashedPhotos([]);
+      await saveTrashedPhotosMetadata([]);
+      
+      // Show appropriate success/error message
+      setTimeout(() => {
+        if (failedCount === 0) {
+          Alert.alert(
+            'Success! 🎉',
+            `${sizeInMB} MB was cleared from your device`,
+            [{ text: 'Great!', style: 'default' }]
+          );
+        } else {
+          Alert.alert(
+            'Partial Success ⚠️',
+            `Cleaned app trash, but ${failedCount} photos couldn't be deleted from device (may be protected)`,
+            [{ text: 'OK', style: 'default' }]
+          );
+        }
+      }, 300);
+      
+    } catch (error) {
+      console.error('Error emptying trash:', error);
+      Alert.alert('Error', 'Failed to empty trash completely');
+    }
+  };
+
+  // Calculate total trash size in MB
+  const getTotalTrashSize = () => {
+    const totalBytes = trashedPhotos.reduce((sum, photo) => sum + (photo.size || 0), 0);
+    return (totalBytes / (1024 * 1024)).toFixed(2); // Convert to MB
   };
 
   const resetCards = () => {
@@ -474,7 +510,6 @@ export default function App() {
 
   const gestureHandler = Gesture.Pan()
     .onBegin(() => {
-      console.log('Gesture started');
       scale.value = withSpring(0.95);
     })
     .onUpdate((event) => {
@@ -483,12 +518,10 @@ export default function App() {
       rotate.value = event.translationX * 0.1;
     })
     .onFinalize((event) => {
-      console.log('Gesture ended with translationX:', event.translationX);
       const shouldSwipe = Math.abs(event.translationX) > screenWidth * 0.2; // Reduced threshold
       
       if (shouldSwipe) {
         const direction = event.translationX > 0 ? 'right' : 'left';
-        console.log('Swiping:', direction);
         
         translateX.value = withTiming(
           direction === 'right' ? screenWidth * 1.5 : -screenWidth * 1.5,
@@ -499,7 +532,6 @@ export default function App() {
         
         runOnJS(handleSwipeComplete)(direction);
       } else {
-        console.log('Returning to center');
         translateX.value = withSpring(0);
         translateY.value = withSpring(0);
         rotate.value = withSpring(0);
@@ -662,12 +694,13 @@ export default function App() {
                     <TouchableOpacity onPress={() => setShowTrashModal(false)}>
                       <Text style={styles.closeButton}>✕</Text>
                     </TouchableOpacity>
-                    <Text style={styles.modalTitle}>Trash ({trashedPhotos.length})</Text>
-                    {trashedPhotos.length > 0 && (
-                      <TouchableOpacity onPress={emptyTrash}>
-                        <Text style={styles.emptyTrashButton}>Empty</Text>
-                      </TouchableOpacity>
-                    )}
+                    <Text style={styles.modalTitle}>
+                      Trash ({trashedPhotos.length})
+                      {trashedPhotos.length > 0 && (
+                        <Text style={styles.trashSizeText}> • {getTotalTrashSize()} MB</Text>
+                      )}
+                    </Text>
+                    <View style={{ width: 24 }} />
                   </View>
                   
                   {trashedPhotos.length === 0 ? (
@@ -694,6 +727,15 @@ export default function App() {
                         </View>
                       ))}
                     </ScrollView>
+                  )}
+                  
+                  {/* Bottom Empty Button */}
+                  {trashedPhotos.length > 0 && (
+                    <View style={styles.emptyButtonContainer}>
+                      <TouchableOpacity style={styles.emptyButton} onPress={emptyTrash}>
+                        <Text style={styles.emptyButtonText}>🗑️ Empty ({getTotalTrashSize()} MB)</Text>
+                      </TouchableOpacity>
+                    </View>
                   )}
                 </LinearGradient>
               </SafeAreaView>
@@ -790,11 +832,7 @@ export default function App() {
                   <Text style={styles.closeButton}>✕</Text>
                 </TouchableOpacity>
                 <Text style={styles.modalTitle}>Trash ({trashedPhotos.length})</Text>
-                {trashedPhotos.length > 0 && (
-                  <TouchableOpacity onPress={emptyTrash}>
-                    <Text style={styles.emptyTrashButton}>Empty</Text>
-                  </TouchableOpacity>
-                )}
+                <View style={{ width: 24 }} />
               </View>
               
               {trashedPhotos.length === 0 ? (
@@ -822,8 +860,58 @@ export default function App() {
                   ))}
                 </ScrollView>
               )}
+              
+              {/* Bottom Empty Button */}
+              {trashedPhotos.length > 0 && (
+                <View style={styles.emptyButtonContainer}>
+                  <TouchableOpacity style={styles.emptyButton} onPress={emptyTrash}>
+                    <Text style={styles.emptyButtonText}>🗑️ Empty ({getTotalTrashSize()} MB)</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </LinearGradient>
           </SafeAreaView>
+        </Modal>
+
+        {/* Beautiful Confirmation Modal for Empty Trash */}
+        <Modal
+          visible={showConfirmEmptyModal}
+          animationType="fade"
+          transparent={true}
+        >
+          <View style={styles.confirmModalOverlay}>
+            <View style={styles.confirmModalContainer}>
+              <LinearGradient
+                colors={['#FF6B6B', '#FF8E8E']}
+                style={styles.confirmModalGradient}
+              >
+                <Text style={styles.confirmModalIcon}>🗑️</Text>
+                <Text style={styles.confirmModalTitle}>Empty Trash?</Text>
+                <Text style={styles.confirmModalSubtitle}>
+                  This will permanently delete {trashedPhotos.length} photos ({getTotalTrashSize()} MB) from your device.
+                </Text>
+                <Text style={styles.confirmModalWarning}>
+                  Photos will be removed from your gallery forever. This action cannot be undone.
+                </Text>
+                
+                <View style={styles.confirmModalButtons}>
+                  <TouchableOpacity
+                    style={styles.confirmModalCancelButton}
+                    onPress={() => setShowConfirmEmptyModal(false)}
+                  >
+                    <Text style={styles.confirmModalCancelText}>Cancel</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity
+                    style={styles.confirmModalDeleteButton}
+                    onPress={confirmEmptyTrash}
+                  >
+                    <Text style={styles.confirmModalDeleteText}>Delete All</Text>
+                  </TouchableOpacity>
+                </View>
+              </LinearGradient>
+            </View>
+          </View>
         </Modal>
       </SafeAreaView>
     </LinearGradient>
@@ -1068,6 +1156,11 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: 'white',
   },
+  trashSizeText: {
+    fontSize: 16,
+    fontWeight: 'normal',
+    color: 'rgba(255, 255, 255, 0.8)',
+  },
   emptyTrashButton: {
     fontSize: 16,
     color: 'white',
@@ -1126,6 +1219,28 @@ const styles = StyleSheet.create({
     fontSize: 12,
     textAlign: 'center',
     paddingBottom: 10,
+  },
+  // Empty button styles
+  emptyButtonContainer: {
+    padding: 20,
+    paddingTop: 10,
+  },
+  emptyButton: {
+    backgroundColor: '#FF6B6B',
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    shadowColor: '#FF6B6B',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  emptyButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
   // Loading screen styles
   loadingContainer: {
@@ -1207,5 +1322,82 @@ const styles = StyleSheet.create({
     backgroundColor: 'white',
     marginHorizontal: 6,
     opacity: 0.5,
+  },
+  // Confirmation Modal Styles
+  confirmModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  confirmModalContainer: {
+    margin: 20,
+    borderRadius: 20,
+    overflow: 'hidden',
+    elevation: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+  },
+  confirmModalGradient: {
+    padding: 30,
+    alignItems: 'center',
+  },
+  confirmModalIcon: {
+    fontSize: 60,
+    marginBottom: 16,
+  },
+  confirmModalTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: 'white',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  confirmModalSubtitle: {
+    fontSize: 16,
+    color: 'rgba(255, 255, 255, 0.9)',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  confirmModalWarning: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.7)',
+    textAlign: 'center',
+    marginBottom: 24,
+    fontStyle: 'italic',
+  },
+  confirmModalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  confirmModalCancelButton: {
+    flex: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.3)',
+  },
+  confirmModalCancelText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  confirmModalDeleteButton: {
+    flex: 1,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+  },
+  confirmModalDeleteText: {
+    color: '#FF6B6B',
+    fontSize: 16,
+    fontWeight: 'bold',
+    textAlign: 'center',
   },
 });
