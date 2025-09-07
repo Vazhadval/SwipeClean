@@ -314,6 +314,11 @@ export default function App() {
 
   const deletePhoto = async (photo: Photo) => {
     try {
+      // Validate photo object
+      if (!photo || !photo.id || !photo.filename) {
+        throw new Error('Invalid photo object');
+      }
+
       // Move to app's trash folder (no confirmation dialog)
       const timestamp = Date.now();
       const trashFileName = `${timestamp}_${photo.filename}`;
@@ -322,7 +327,7 @@ export default function App() {
       // Get asset info to get the local URI
       const assetInfo = await MediaLibrary.getAssetInfoAsync(photo.id);
       
-      if (assetInfo.localUri || assetInfo.uri) {
+      if (assetInfo && (assetInfo.localUri || assetInfo.uri)) {
         const sourceUri = assetInfo.localUri || assetInfo.uri;
         
         // Copy photo to trash folder
@@ -354,7 +359,7 @@ export default function App() {
         // NOTE: We don't delete from MediaLibrary to avoid confirmation dialog
         // The photo remains in the gallery but is marked as "deleted" in our app
       } else {
-        throw new Error('Could not access photo file');
+        throw new Error(`Could not access photo file: assetInfo is ${assetInfo ? 'missing localUri/uri' : 'null'}`);
       }
     } catch (error) {
       console.error('Error moving photo to trash:', error);
@@ -425,7 +430,6 @@ export default function App() {
       setTrashedPhotos(updatedTrashedPhotos);
       await saveTrashedPhotosMetadata(updatedTrashedPhotos);
       
-      Alert.alert('Success', 'Photo restored successfully!');
     } catch (error) {
       console.error('Error restoring photo:', error);
       Alert.alert('Error', 'Failed to restore photo');
@@ -654,9 +658,6 @@ export default function App() {
             <View style={styles.header}>
               <View style={styles.headerTop}>
                 <Text style={styles.title}>SwipeClean</Text>
-                <TouchableOpacity style={styles.trashButton} onPress={() => setShowTrashModal(true)}>
-                  <Text style={styles.trashButtonText}>🗑️ Trash ({trashedPhotos.length})</Text>
-                </TouchableOpacity>
               </View>
             </View>
             <View style={styles.completedContainer}>
@@ -678,6 +679,21 @@ export default function App() {
                 <Text style={styles.resetButtonText}>Review More Photos</Text>
               </TouchableOpacity>
             </View>
+
+            {/* Floating Action Button for Trash */}
+            <TouchableOpacity style={styles.fabButton} onPress={() => setShowTrashModal(true)}>
+              <LinearGradient
+                colors={['#16213e', '#0f3460']} // Subset of theme gradient
+                style={styles.fabGradient}
+              >
+                <Text style={styles.fabIcon}>🗑️</Text>
+                {trashedPhotos.length > 0 && (
+                  <View style={styles.fabBadge}>
+                    <Text style={styles.fabBadgeText}>{trashedPhotos.length}</Text>
+                  </View>
+                )}
+              </LinearGradient>
+            </TouchableOpacity>
 
             {/* Trash Modal */}
             <Modal
@@ -760,9 +776,6 @@ export default function App() {
         <View style={styles.header}>
           <View style={styles.headerTop}>
             <Text style={styles.title}>SwipeClean</Text>
-            <TouchableOpacity style={styles.trashButton} onPress={() => setShowTrashModal(true)}>
-              <Text style={styles.trashButtonText}>🗑️ Trash ({trashedPhotos.length})</Text>
-            </TouchableOpacity>
           </View>
           <View style={styles.stats}>
             <View style={styles.statBadge}>
@@ -815,6 +828,21 @@ export default function App() {
             Swipe right to keep • Swipe left to delete
           </Text>
         </View>
+
+        {/* Floating Action Button for Trash */}
+        <TouchableOpacity style={styles.fabButton} onPress={() => setShowTrashModal(true)}>
+          <LinearGradient
+            colors={['#16213e', '#0f3460']} // Subset of theme gradient
+            style={styles.fabGradient}
+          >
+            <Text style={styles.fabIcon}>🗑️</Text>
+            {trashedPhotos.length > 0 && (
+              <View style={styles.fabBadge}>
+                <Text style={styles.fabBadgeText}>{trashedPhotos.length}</Text>
+              </View>
+            )}
+          </LinearGradient>
+        </TouchableOpacity>
 
         {/* Trash Modal */}
         <Modal
@@ -886,16 +914,16 @@ export default function App() {
           <View style={styles.confirmModalOverlay}>
             <View style={styles.confirmModalContainer}>
               <LinearGradient
-                colors={['#FF6B6B', '#FF8E8E']}
+                colors={THEME_COLORS.gradient}
                 style={styles.confirmModalGradient}
               >
-                <Text style={styles.confirmModalIcon}>🗑️</Text>
-                <Text style={styles.confirmModalTitle}>Empty Trash?</Text>
+                <Text style={styles.confirmModalIcon}>✨</Text>
+                <Text style={styles.confirmModalTitle}>Clean Up Space?</Text>
                 <Text style={styles.confirmModalSubtitle}>
-                  This will permanently delete {trashedPhotos.length} photos ({getTotalTrashSize()} MB) from your device.
+                  Ready to free up {getTotalTrashSize()} MB by removing {trashedPhotos.length} photos from your device.
                 </Text>
                 <Text style={styles.confirmModalWarning}>
-                  Photos will be removed from your gallery forever. This action cannot be undone.
+                  This will help keep your gallery organized and save storage space.
                 </Text>
                 
                 <View style={styles.confirmModalButtons}>
@@ -903,14 +931,14 @@ export default function App() {
                     style={styles.confirmModalCancelButton}
                     onPress={() => setShowConfirmEmptyModal(false)}
                   >
-                    <Text style={styles.confirmModalCancelText}>Cancel</Text>
+                    <Text style={styles.confirmModalCancelText}>Keep Photos</Text>
                   </TouchableOpacity>
                   
                   <TouchableOpacity
                     style={styles.confirmModalDeleteButton}
                     onPress={confirmEmptyTrash}
                   >
-                    <Text style={styles.confirmModalDeleteText}>Delete All</Text>
+                    <Text style={styles.confirmModalDeleteText}>Clean Up</Text>
                   </TouchableOpacity>
                 </View>
               </LinearGradient>
@@ -1124,16 +1152,54 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 15,
   },
-  trashButton: {
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 15,
+  // Floating Action Button styles
+  fabButton: {
+    position: 'absolute',
+    bottom: 30,
+    right: 20,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    borderWidth: 2,
+    borderColor: THEME_COLORS.accent, // Bright teal border
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+    overflow: 'hidden', // Ensure gradient stays within border radius
   },
-  trashButtonText: {
+  fabGradient: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 30,
+  },
+  fabIcon: {
+    fontSize: 24,
+    color: THEME_COLORS.accent, // Bright teal trash icon
+  },
+  fabBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: '#FF4444',
+    borderRadius: 12,
+    minWidth: 20,
+    height: 20,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: THEME_COLORS.accent, // Match the teal border
+  },
+  fabBadgeText: {
     color: 'white',
-    fontWeight: '600',
-    fontSize: 12,
+    fontSize: 11,
+    fontWeight: 'bold',
   },
   // Modal styles
   modalContainer: {
@@ -1208,13 +1274,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   restoreButton: {
-    backgroundColor: '#4CD964',
+    backgroundColor: 'rgba(22, 33, 62, 0.8)', // Semi-transparent theme color
+    borderWidth: 2,
+    borderColor: THEME_COLORS.accent, // Bright teal border like FAB
     paddingHorizontal: 20,
     paddingVertical: 8,
     borderRadius: 20,
   },
   restoreButtonText: {
-    color: 'white',
+    color: THEME_COLORS.accent, // Bright teal text to match border
     fontWeight: '600',
     fontSize: 14,
   },
@@ -1230,19 +1298,21 @@ const styles = StyleSheet.create({
     paddingTop: 10,
   },
   emptyButton: {
-    backgroundColor: '#FF6B6B',
+    backgroundColor: 'rgba(22, 33, 62, 0.8)', // Same as restore button
+    borderWidth: 2,
+    borderColor: '#FF6B6B', // Red border - clear delete action but not scary
     paddingVertical: 16,
     paddingHorizontal: 24,
     borderRadius: 12,
     alignItems: 'center',
-    shadowColor: '#FF6B6B',
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 8,
   },
   emptyButtonText: {
-    color: 'white',
+    color: '#FF6B6B', // Red text to match border
     fontSize: 16,
     fontWeight: 'bold',
   },
@@ -1378,7 +1448,7 @@ const styles = StyleSheet.create({
   },
   confirmModalCancelButton: {
     flex: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: 'transparent',
     paddingVertical: 12,
     paddingHorizontal: 20,
     borderRadius: 12,
@@ -1386,22 +1456,28 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255, 255, 255, 0.3)',
   },
   confirmModalCancelText: {
-    color: 'white',
+    color: 'rgba(255, 255, 255, 0.7)',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '500',
     textAlign: 'center',
   },
   confirmModalDeleteButton: {
     flex: 1,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    backgroundColor: THEME_COLORS.accent,
     paddingVertical: 12,
     paddingHorizontal: 20,
     borderRadius: 12,
+    borderWidth: 0,
+    shadowColor: THEME_COLORS.accent,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
   },
   confirmModalDeleteText: {
-    color: '#FF6B6B',
+    color: '#1a1a2e',
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '700',
     textAlign: 'center',
   },
 });
