@@ -83,8 +83,8 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [loadingMessage, setLoadingMessage] = useState('Preparing...');
-  const [keptCount, setKeptCount] = useState(0);
-  const [deletedCount, setDeletedCount] = useState(0);
+  const [storageFreed, setStorageFreed] = useState(0); // MB freed this session
+  const [photosProcessed, setPhotosProcessed] = useState(0); // Total photos reviewed
   const [trashedPhotos, setTrashedPhotos] = useState<TrashedPhoto[]>([]);
   const [showTrashModal, setShowTrashModal] = useState(false);
   const [showConfirmEmptyModal, setShowConfirmEmptyModal] = useState(false);
@@ -296,11 +296,13 @@ export default function App() {
     if (direction === 'left') {
       // Delete photo
       deletePhoto(currentPhoto);
-      setDeletedCount(prev => prev + 1);
+      // Storage will be updated in deletePhoto function
     } else {
-      // Keep photo
-      setKeptCount(prev => prev + 1);
+      // Keep photo - no storage impact
     }
+
+    // Update photos processed counter (both kept and deleted)
+    setPhotosProcessed(prev => prev + 1);
 
     // Move to next photo
     setCurrentPhotoIndex(prev => prev + 1);
@@ -339,6 +341,10 @@ export default function App() {
         // Get file size for tracking
         const fileInfo = await FileSystem.getInfoAsync(trashPath, { size: true });
         const fileSize = fileInfo.exists && 'size' in fileInfo ? fileInfo.size : 0;
+        
+        // Update storage freed counter (convert bytes to MB)
+        const sizeInMB = fileSize / (1024 * 1024);
+        setStorageFreed(prev => prev + sizeInMB);
         
         // Create trashed photo metadata
         const trashedPhoto: TrashedPhoto = {
@@ -503,8 +509,8 @@ export default function App() {
 
   const resetCards = () => {
     setCurrentPhotoIndex(0);
-    setKeptCount(0);
-    setDeletedCount(0);
+    setStorageFreed(0);
+    setPhotosProcessed(0);
     translateX.value = withSpring(0);
     translateY.value = withSpring(0);
     rotate.value = withSpring(0);
@@ -657,22 +663,26 @@ export default function App() {
           <SafeAreaView style={styles.safeArea}>
             <View style={styles.header}>
               <View style={styles.headerTop}>
-                <Text style={styles.title}>SwipeClean</Text>
+                <Image 
+                  source={require('./assets/logo-transparent.png')} 
+                  style={styles.headerLogo}
+                  resizeMode="contain"
+                />
               </View>
             </View>
             <View style={styles.completedContainer}>
               <Text style={styles.completedTitle}>All Done! 🎉</Text>
               <Text style={styles.completedText}>
-                You've reviewed all your photos!
+                Great job organizing your photos! You've made real progress cleaning up your device.
               </Text>
               <View style={styles.statsContainer}>
                 <View style={styles.statItem}>
-                  <Text style={styles.statNumber}>{keptCount}</Text>
-                  <Text style={styles.statLabel}>Kept</Text>
+                  <Text style={styles.statNumber}>{storageFreed.toFixed(1)}</Text>
+                  <Text style={styles.statLabel}>MB Freed</Text>
                 </View>
                 <View style={styles.statItem}>
-                  <Text style={styles.statNumber}>{deletedCount}</Text>
-                  <Text style={styles.statLabel}>Deleted</Text>
+                  <Text style={styles.statNumber}>{photosProcessed}</Text>
+                  <Text style={styles.statLabel}>Reviewed</Text>
                 </View>
               </View>
               <TouchableOpacity style={styles.resetButton} onPress={resetCards}>
@@ -775,14 +785,18 @@ export default function App() {
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerTop}>
-            <Text style={styles.title}>SwipeClean</Text>
+            <Image 
+              source={require('./assets/logo-transparent.png')} 
+              style={styles.headerLogo}
+              resizeMode="contain"
+            />
           </View>
           <View style={styles.stats}>
-            <View style={styles.statBadge}>
-              <Text style={styles.statBadgeText}>Kept: {keptCount}</Text>
+            <View style={styles.statBadgeFreed}>
+              <Text style={styles.statBadgeText}>Freed: {storageFreed.toFixed(1)} MB</Text>
             </View>
-            <View style={styles.statBadge}>
-              <Text style={styles.statBadgeText}>Deleted: {deletedCount}</Text>
+            <View style={styles.statBadgeReviewed}>
+              <Text style={styles.statBadgeText}>Reviewed: {photosProcessed}</Text>
             </View>
           </View>
         </View>
@@ -825,7 +839,7 @@ export default function App() {
         {/* Instructions */}
         <View style={styles.instructions}>
           <Text style={styles.instructionText}>
-            Swipe right to keep • Swipe left to delete
+            Swipe ← to delete • Swipe → to keep
           </Text>
         </View>
 
@@ -976,6 +990,10 @@ const styles = StyleSheet.create({
     textShadowRadius: 4,
     flex: 1,
   },
+  headerLogo: {
+    height: 44,
+    width: 165,
+  },
   stats: {
     flexDirection: 'row',
     justifyContent: 'center',
@@ -986,6 +1004,22 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 20,
+  },
+  statBadgeFreed: {
+    backgroundColor: 'rgba(76, 217, 100, 0.3)', // Light green background
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(76, 217, 100, 0.6)',
+  },
+  statBadgeReviewed: {
+    backgroundColor: 'rgba(52, 152, 219, 0.3)', // Light blue background
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(52, 152, 219, 0.6)',
   },
   statBadgeText: {
     color: 'white',
@@ -1054,8 +1088,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   instructionText: {
-    color: 'white',
-    fontSize: 16,
+    color: '#FFEB3B', // Slightly lighter golden yellow
+    fontSize: 18,
     textAlign: 'center',
     fontWeight: '500',
     textShadowColor: 'rgba(0, 0, 0, 0.3)',
@@ -1151,7 +1185,7 @@ const styles = StyleSheet.create({
   // Header styles
   headerTop: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 15,
   },
