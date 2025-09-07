@@ -919,9 +919,12 @@ export default function App() {
               >
                 <Text style={styles.confirmModalIcon}>✨</Text>
                 <Text style={styles.confirmModalTitle}>Clean Up Space?</Text>
-                <Text style={styles.confirmModalSubtitle}>
-                  Ready to free up {getTotalTrashSize()} MB by removing {trashedPhotos.length} photos from your device.
-                </Text>
+                
+                <View style={styles.confirmModalStorageInfo}>
+                  <Text style={styles.confirmModalStorageText}>Ready to free up</Text>
+                  <Text style={styles.confirmModalStorageAmount}>{getTotalTrashSize()} MB</Text>
+                  <Text style={styles.confirmModalStorageText}>by removing {trashedPhotos.length} photos</Text>
+                </View>
                 <Text style={styles.confirmModalWarning}>
                   This will help keep your gallery organized and save storage space.
                 </Text>
@@ -1441,6 +1444,26 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 24,
     fontStyle: 'italic',
+  },
+  confirmModalStorageInfo: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  confirmModalStorageText: {
+    fontSize: 16,
+    color: 'rgba(255, 255, 255, 0.9)',
+    textAlign: 'center',
+    marginBottom: 4,
+  },
+  confirmModalStorageAmount: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: THEME_COLORS.accent,
+    textAlign: 'center',
+    marginVertical: 8,
+    textShadowColor: 'rgba(0, 255, 208, 0.3)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
   },
   confirmModalButtons: {
     flexDirection: 'row',
