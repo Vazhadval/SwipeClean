@@ -93,6 +93,11 @@ export default function App() {
   const [totalPhotosFound, setTotalPhotosFound] = useState(0);
   const [photosLoadedSoFar, setPhotosLoadedSoFar] = useState(0);
   const [isLoadingInBackground, setIsLoadingInBackground] = useState(false);
+  
+  // Undo functionality state
+  const [canUndo, setCanUndo] = useState(false);
+  const [previousPhoto, setPreviousPhoto] = useState<Photo | null>(null);
+  const [previousAction, setPreviousAction] = useState<'keep' | 'delete' | null>(null);
 
   const TRASH_DIR = `${FileSystem.documentDirectory}trash/`;
 
@@ -108,6 +113,16 @@ export default function App() {
   const dot1Scale = useSharedValue(1);
   const dot2Scale = useSharedValue(1);
   const dot3Scale = useSharedValue(1);
+
+  // Fisher-Yates shuffle algorithm for truly random distribution
+  const shuffleArray = (array: Photo[]): Photo[] => {
+    const shuffled = [...array]; // Create a copy
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    return shuffled;
+  };
 
   useEffect(() => {
     requestPermissionAndLoadPhotos();
@@ -270,16 +285,6 @@ export default function App() {
       setLoadingMessage('Shuffling photos...');
       await new Promise(resolve => setTimeout(resolve, 250));
 
-      // Fisher-Yates shuffle algorithm for truly random distribution
-      const shuffleArray = (array: Photo[]) => {
-        const shuffled = [...array]; // Create a copy
-        for (let i = shuffled.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-        }
-        return shuffled;
-      };
-
       const shuffledInitial = shuffleArray(initialPhotos);
       setPhotos(shuffledInitial);
       setPhotosLoadedSoFar(initialBatchSize);
@@ -326,20 +331,8 @@ export default function App() {
           filename: asset.filename,
         }));
 
-        // Shuffle batch photos
-        const shuffleArray = (array: Photo[]) => {
-          const shuffled = [...array];
-          for (let i = shuffled.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-          }
-          return shuffled;
-        };
-
-        const shuffledBatch = shuffleArray(batchPhotos);
-
-        // Add shuffled batch to existing photos and update progress immediately
-        setPhotos(prevPhotos => [...prevPhotos, ...shuffledBatch]);
+        // Add batch to existing photos and update progress immediately
+        setPhotos(prevPhotos => [...prevPhotos, ...batchPhotos]);
         setPhotosLoadedSoFar(prev => prev + batchSize);
         
         currentOffset += batchSize;
@@ -347,6 +340,9 @@ export default function App() {
         // Shorter delay for more responsive progress updates
         await new Promise(resolve => setTimeout(resolve, 30));
       }
+      
+      // Shuffle the entire photos array when all loading is complete
+      setPhotos(prevPhotos => shuffleArray(prevPhotos));
       
       setIsLoadingInBackground(false);
     } catch (error) {
@@ -377,16 +373,6 @@ export default function App() {
         filename: asset.filename,
       }));
 
-      // Shuffle batch photos
-      const shuffleArray = (array: Photo[]) => {
-        const shuffled = [...array];
-        for (let i = shuffled.length - 1; i > 0; i--) {
-          const j = Math.floor(Math.random() * (i + 1));
-          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-        }
-        return shuffled;
-      };
-
       const shuffledBatch = shuffleArray(batchPhotos);
 
       // Add shuffled batch to existing photos and update progress immediately
@@ -405,6 +391,11 @@ export default function App() {
 
     const currentPhoto = photos[currentPhotoIndex];
 
+    // Store previous photo and action for undo functionality
+    setPreviousPhoto(currentPhoto);
+    setPreviousAction(direction === 'left' ? 'delete' : 'keep');
+    setCanUndo(true);
+
     if (direction === 'left') {
       // Delete photo
       deletePhoto(currentPhoto);
@@ -418,6 +409,39 @@ export default function App() {
 
     // Move to next photo
     setCurrentPhotoIndex(prev => prev + 1);
+    
+    // Reset animation values
+    translateX.value = withSpring(0);
+    translateY.value = withSpring(0);
+    rotate.value = withSpring(0);
+    scale.value = withSpring(1);
+  };
+
+  const handleUndo = () => {
+    if (!canUndo || !previousPhoto || !previousAction || currentPhotoIndex === 0) return;
+
+    // If the previous action was delete, we need to restore the photo from trash
+    if (previousAction === 'delete') {
+      // Find the trashed photo to get its size
+      const trashedPhoto = trashedPhotos.find(tp => tp.originalId === previousPhoto.id);
+      
+      // Restore photo from trash (move back to original location)
+      restorePhotoFromTrash(previousPhoto);
+      
+      // Reduce storage freed amount since we're restoring the photo
+      if (trashedPhoto && trashedPhoto.size) {
+        setStorageFreed(prev => Math.max(0, prev - trashedPhoto.size));
+      }
+    }
+
+    // Go back to previous photo
+    setCurrentPhotoIndex(prev => prev - 1);
+    setPhotosProcessed(prev => Math.max(0, prev - 1));
+    
+    // Reset undo state
+    setCanUndo(false);
+    setPreviousPhoto(null);
+    setPreviousAction(null);
     
     // Reset animation values
     translateX.value = withSpring(0);
@@ -537,10 +561,7 @@ export default function App() {
 
   const restorePhoto = async (trashedPhoto: TrashedPhoto) => {
     try {
-      // Create asset back in media library
-      const restoredAsset = await MediaLibrary.createAssetAsync(trashedPhoto.trashPath);
-      
-      // Remove from trash folder
+      // Just remove from trash folder - the original photo is still in media library
       await FileSystem.deleteAsync(trashedPhoto.trashPath);
       
       // Remove from trashed photos list
@@ -548,9 +569,24 @@ export default function App() {
       setTrashedPhotos(updatedTrashedPhotos);
       await saveTrashedPhotosMetadata(updatedTrashedPhotos);
       
+      // Note: No need to create asset back in media library since we never actually deleted it
+      // The photo will appear again in the next photo load from MediaLibrary.getAssetsAsync
+      
     } catch (error) {
       console.error('Error restoring photo:', error);
       Alert.alert('Error', 'Failed to restore photo');
+    }
+  };
+
+  const restorePhotoFromTrash = async (photo: Photo) => {
+    try {
+      // Find the trashed photo by id
+      const trashedPhoto = trashedPhotos.find(tp => tp.originalId === photo.id);
+      if (trashedPhoto) {
+        await restorePhoto(trashedPhoto);
+      }
+    } catch (error) {
+      console.error('Error restoring photo from trash:', error);
     }
   };
 
@@ -626,6 +662,9 @@ export default function App() {
     setPhotosLoadedSoFar(0);
     setTotalPhotosFound(0);
     setIsLoadingInBackground(false);
+    setCanUndo(false);
+    setPreviousPhoto(null);
+    setPreviousAction(null);
     translateX.value = withSpring(0);
     translateY.value = withSpring(0);
     rotate.value = withSpring(0);
@@ -820,6 +859,18 @@ export default function App() {
               </LinearGradient>
             </TouchableOpacity>
 
+            {/* Undo Button - also available on completed screen */}
+            {canUndo && (
+              <TouchableOpacity style={styles.undoButton} onPress={handleUndo}>
+                <LinearGradient
+                  colors={['#16213e', '#0f3460']}
+                  style={styles.undoGradient}
+                >
+                  <Text style={styles.undoIcon}>↶</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            )}
+
             {/* Trash Modal */}
             <Modal
               visible={showTrashModal}
@@ -990,6 +1041,18 @@ export default function App() {
             )}
           </LinearGradient>
         </TouchableOpacity>
+
+        {/* Undo Button - opposite side of trash button */}
+        {canUndo && (
+          <TouchableOpacity style={styles.undoButton} onPress={handleUndo}>
+            <LinearGradient
+              colors={['#16213e', '#0f3460']} // Same gradient as trash button
+              style={styles.undoGradient}
+            >
+              <Text style={styles.undoIcon}>↶</Text>
+            </LinearGradient>
+          </TouchableOpacity>
+        )}
 
         {/* Trash Modal */}
         <Modal
@@ -1393,6 +1456,38 @@ const styles = StyleSheet.create({
   fabBadgeText: {
     color: 'white',
     fontSize: 11,
+    fontWeight: 'bold',
+  },
+  // Undo Button styles (positioned opposite to trash button)
+  undoButton: {
+    position: 'absolute',
+    bottom: 30,
+    left: 20, // Opposite side of trash button
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    borderWidth: 2,
+    borderColor: THEME_COLORS.accent, // Same teal border
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+    overflow: 'hidden',
+  },
+  undoGradient: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 30,
+  },
+  undoIcon: {
+    fontSize: 28,
+    color: THEME_COLORS.accent, // Bright teal undo icon
     fontWeight: 'bold',
   },
   // Modal styles
