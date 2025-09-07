@@ -821,6 +821,9 @@ export default function App() {
           visible={showTrashModal}
           animationType="slide"
           presentationStyle="pageSheet"
+          onRequestClose={() => {
+            setShowTrashModal(false);
+          }}
         >
           <SafeAreaView style={styles.modalContainer}>
             <LinearGradient
@@ -878,6 +881,7 @@ export default function App() {
           visible={showConfirmEmptyModal}
           animationType="fade"
           transparent={true}
+          onRequestClose={() => setShowConfirmEmptyModal(false)}
         >
           <View style={styles.confirmModalOverlay}>
             <View style={styles.confirmModalContainer}>
