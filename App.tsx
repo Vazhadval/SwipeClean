@@ -88,6 +88,11 @@ export default function App() {
   const [trashedPhotos, setTrashedPhotos] = useState<TrashedPhoto[]>([]);
   const [showTrashModal, setShowTrashModal] = useState(false);
   const [showConfirmEmptyModal, setShowConfirmEmptyModal] = useState(false);
+  
+  // New state for batch loading
+  const [totalPhotosFound, setTotalPhotosFound] = useState(0);
+  const [photosLoadedSoFar, setPhotosLoadedSoFar] = useState(0);
+  const [isLoadingInBackground, setIsLoadingInBackground] = useState(false);
 
   const TRASH_DIR = `${FileSystem.documentDirectory}trash/`;
 
@@ -109,6 +114,20 @@ export default function App() {
     createTrashDirectory();
     loadTrashedPhotos();
   }, []);
+
+  // Smart preloading: Check if we need to load more photos when user is running low
+  useEffect(() => {
+    const PRELOAD_THRESHOLD = 20; // Start loading more when 20 photos left
+    const photosRemaining = photos.length - currentPhotoIndex;
+    
+    if (photosRemaining <= PRELOAD_THRESHOLD && 
+        photosLoadedSoFar < totalPhotosFound && 
+        !isLoadingInBackground && 
+        totalPhotosFound > 0) {
+      console.log(`Preloading: ${photosRemaining} photos remaining, loading more...`);
+      loadNextBatch();
+    }
+  }, [currentPhotoIndex, photos.length, photosLoadedSoFar, totalPhotosFound, isLoadingInBackground]);
 
   // Animate loading dots
   useEffect(() => {
@@ -216,45 +235,40 @@ export default function App() {
         first: 1,
       });
 
+      const totalCount = initialMedia.totalCount;
+      setTotalPhotosFound(totalCount);
+
       setLoadingProgress(25);
-      setLoadingMessage(`Found ${initialMedia.totalCount} photos`);
+      setLoadingMessage(`Found ${totalCount} photos`);
       await new Promise(resolve => setTimeout(resolve, 400));
 
+      // Load first batch immediately (50 photos or all if less)
+      const INITIAL_BATCH_SIZE = 50;
+      const initialBatchSize = Math.min(INITIAL_BATCH_SIZE, totalCount);
+      
       setLoadingProgress(35);
-      setLoadingMessage('Initializing photo loader...');
+      setLoadingMessage(`Loading first ${initialBatchSize} photos...`);
       await new Promise(resolve => setTimeout(resolve, 300));
 
-      setLoadingProgress(45);
-      setLoadingMessage('Loading all photos...');
-      await new Promise(resolve => setTimeout(resolve, 200));
-
-      // Now load ALL photos
-      const media = await MediaLibrary.getAssetsAsync({
+      const firstBatch = await MediaLibrary.getAssetsAsync({
         mediaType: 'photo',
-        first: initialMedia.totalCount, // Load all photos
+        first: initialBatchSize,
         sortBy: 'creationTime',
       });
 
       setLoadingProgress(60);
-      setLoadingMessage('Photos loaded successfully...');
+      setLoadingMessage('Processing initial photos...');
       await new Promise(resolve => setTimeout(resolve, 300));
 
-      setLoadingProgress(70);
-      setLoadingMessage('Processing photo data...');
-      await new Promise(resolve => setTimeout(resolve, 250));
-
-      const photoData: Photo[] = media.assets.map((asset) => ({
+      const initialPhotos: Photo[] = firstBatch.assets.map((asset) => ({
         id: asset.id,
         uri: asset.uri,
         filename: asset.filename,
       }));
 
       setLoadingProgress(80);
-      setLoadingMessage('Preparing random shuffle...');
-      await new Promise(resolve => setTimeout(resolve, 300));
-
-      setLoadingProgress(88);
-      setLoadingMessage('Shuffling photos for random display...');
+      setLoadingMessage('Shuffling photos...');
+      await new Promise(resolve => setTimeout(resolve, 250));
 
       // Fisher-Yates shuffle algorithm for truly random distribution
       const shuffleArray = (array: Photo[]) => {
@@ -266,25 +280,123 @@ export default function App() {
         return shuffled;
       };
 
-      const shuffledPhotos = shuffleArray(photoData);
+      const shuffledInitial = shuffleArray(initialPhotos);
+      setPhotos(shuffledInitial);
+      setPhotosLoadedSoFar(initialBatchSize);
       
-      setLoadingProgress(95);
-      setLoadingMessage('Finalizing setup...');
-      await new Promise(resolve => setTimeout(resolve, 300));
-      
-      setPhotos(shuffledPhotos);
       setLoadingProgress(100);
       setLoadingMessage('Ready to swipe!');
       
-      // Delay before hiding loader
+      // Delay before hiding loader and starting background loading
       setTimeout(() => {
         setLoading(false);
+        // Start loading remaining photos in background if there are more
+        if (totalCount > INITIAL_BATCH_SIZE) {
+          loadRemainingPhotosInBackground(INITIAL_BATCH_SIZE, totalCount);
+        }
       }, 400);
       
     } catch (error) {
       console.error('Error loading photos:', error);
       Alert.alert('Error', 'Failed to load photos');
       setLoading(false);
+    }
+  };
+
+  const loadRemainingPhotosInBackground = async (alreadyLoaded: number, totalCount: number) => {
+    try {
+      setIsLoadingInBackground(true);
+      const BATCH_SIZE = 50; // Smaller batches for more frequent progress updates
+      let currentOffset = alreadyLoaded;
+      
+      while (currentOffset < totalCount) {
+        const remainingCount = totalCount - currentOffset;
+        const batchSize = Math.min(BATCH_SIZE, remainingCount);
+        
+        const batch = await MediaLibrary.getAssetsAsync({
+          mediaType: 'photo',
+          first: batchSize,
+          after: currentOffset.toString(),
+          sortBy: 'creationTime',
+        });
+
+        const batchPhotos: Photo[] = batch.assets.map((asset) => ({
+          id: asset.id,
+          uri: asset.uri,
+          filename: asset.filename,
+        }));
+
+        // Shuffle batch photos
+        const shuffleArray = (array: Photo[]) => {
+          const shuffled = [...array];
+          for (let i = shuffled.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+          }
+          return shuffled;
+        };
+
+        const shuffledBatch = shuffleArray(batchPhotos);
+
+        // Add shuffled batch to existing photos and update progress immediately
+        setPhotos(prevPhotos => [...prevPhotos, ...shuffledBatch]);
+        setPhotosLoadedSoFar(prev => prev + batchSize);
+        
+        currentOffset += batchSize;
+        
+        // Shorter delay for more responsive progress updates
+        await new Promise(resolve => setTimeout(resolve, 30));
+      }
+      
+      setIsLoadingInBackground(false);
+    } catch (error) {
+      console.error('Error loading remaining photos:', error);
+      setIsLoadingInBackground(false);
+    }
+  };
+
+  const loadNextBatch = async () => {
+    if (isLoadingInBackground || photosLoadedSoFar >= totalPhotosFound) return;
+    
+    try {
+      setIsLoadingInBackground(true);
+      const BATCH_SIZE = 50; // Smaller batches for responsive preloading and progress updates
+      const remainingCount = totalPhotosFound - photosLoadedSoFar;
+      const batchSize = Math.min(BATCH_SIZE, remainingCount);
+      
+      const batch = await MediaLibrary.getAssetsAsync({
+        mediaType: 'photo',
+        first: batchSize,
+        after: photosLoadedSoFar.toString(),
+        sortBy: 'creationTime',
+      });
+
+      const batchPhotos: Photo[] = batch.assets.map((asset) => ({
+        id: asset.id,
+        uri: asset.uri,
+        filename: asset.filename,
+      }));
+
+      // Shuffle batch photos
+      const shuffleArray = (array: Photo[]) => {
+        const shuffled = [...array];
+        for (let i = shuffled.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+        return shuffled;
+      };
+
+      const shuffledBatch = shuffleArray(batchPhotos);
+
+      // Add shuffled batch to existing photos and update progress immediately
+      setPhotos(prevPhotos => [...prevPhotos, ...shuffledBatch]);
+      setPhotosLoadedSoFar(prev => prev + batchSize);
+      
+      setIsLoadingInBackground(false);
+    } catch (error) {
+      console.error('Error loading next batch:', error);
+      setIsLoadingInBackground(false);
     }
   };
 
@@ -511,6 +623,9 @@ export default function App() {
     setCurrentPhotoIndex(0);
     setStorageFreed(0);
     setPhotosProcessed(0);
+    setPhotosLoadedSoFar(0);
+    setTotalPhotosFound(0);
+    setIsLoadingInBackground(false);
     translateX.value = withSpring(0);
     translateY.value = withSpring(0);
     rotate.value = withSpring(0);
@@ -791,6 +906,24 @@ export default function App() {
               resizeMode="contain"
             />
           </View>
+          
+          {/* Background Loading Indicator */}
+          {!loading && totalPhotosFound > photos.length && (
+            <View style={styles.backgroundLoadingContainer}>
+              <Text style={styles.backgroundLoadingText}>
+                {isLoadingInBackground ? '📸 Loading more...' : '⏳ Ready to load more...'} {photos.length}/{totalPhotosFound} photos ready
+              </Text>
+              <View style={styles.backgroundProgressBar}>
+                <View 
+                  style={[
+                    styles.backgroundProgressFill, 
+                    { width: `${(photos.length / totalPhotosFound) * 100}%` }
+                  ]} 
+                />
+              </View>
+            </View>
+          )}
+          
           <View style={styles.stats}>
             <View style={styles.statBadgeFreed}>
               <Text style={styles.statBadgeText}>Freed: {storageFreed.toFixed(1)} MB</Text>
@@ -1189,6 +1322,30 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 15,
   },
+  // Background loading indicator styles
+  backgroundLoadingContainer: {
+    alignItems: 'center',
+    marginBottom: 10,
+    paddingHorizontal: 20,
+  },
+  backgroundLoadingText: {
+    color: 'rgba(255, 255, 255, 0.8)',
+    fontSize: 14,
+    marginBottom: 6,
+    fontWeight: '500',
+  },
+  backgroundProgressBar: {
+    width: '100%',
+    height: 3,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 2,
+    overflow: 'hidden',
+  },
+  backgroundProgressFill: {
+    height: '100%',
+    backgroundColor: THEME_COLORS.accent,
+    borderRadius: 2,
+  },
   // Floating Action Button styles
   fabButton: {
     position: 'absolute',
@@ -1396,6 +1553,13 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 20,
     opacity: 0.9,
+  },
+  loadingHint: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.7)',
+    textAlign: 'center',
+    marginBottom: 15,
+    fontStyle: 'italic',
   },
   progressBarBackground: {
     width: '100%',
