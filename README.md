@@ -1,4 +1,11 @@
-# SwipeClean - Photo Management App
+# SwipeClean -## ✨ Features
+
+- 📱 **Swipe to organize** - Right to keep, left to delete
+- 🗂️ **Safe deletion** - Photos stored in recoverable trash
+- ↩️ **Undo support** - Reverse your last decision
+- 📈 **Progress tracking** - See photos processed and storage freed
+- 📤 **Easy sharing** - Share photos to your favorite social apps (Facebook, Instagram, Messages, Gmail, etc.)
+- 🎨 **Beautiful UI** - Smooth animations and gradientsManagement App
 
 A beautiful React Native app that helps you organize your photos using intuitive swipe gestures.
 
@@ -51,8 +58,9 @@ npm start
 1. Grant photo access permissions
 2. Swipe right (→) to keep photos
 3. Swipe left (←) to delete photos
-4. Use undo button to reverse decisions
-5. Manage deleted photos in trash folder
+4. Tap share button (📤) to share photos to social apps
+5. Use undo button to reverse decisions
+6. Manage deleted photos in trash folder
 
 ---
 

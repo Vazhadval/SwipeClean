@@ -16,6 +16,8 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import * as MediaLibrary from 'expo-media-library';
 import * as FileSystem from 'expo-file-system';
+import * as Sharing from 'expo-sharing';
+import { Ionicons } from '@expo/vector-icons';
 import { GestureHandlerRootView, Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   useAnimatedStyle,
@@ -672,6 +674,35 @@ export default function App() {
     loadPhotos();
   };
 
+  const sharePhoto = async (photo: Photo) => {
+    try {
+      // Check if sharing is available on this device
+      const isAvailable = await Sharing.isAvailableAsync();
+      if (!isAvailable) {
+        Alert.alert('Sharing not available', 'This device does not support sharing');
+        return;
+      }
+
+      // Get the asset info to access the local URI
+      const assetInfo = await MediaLibrary.getAssetInfoAsync(photo.id);
+      
+      if (assetInfo && (assetInfo.localUri || assetInfo.uri)) {
+        const sourceUri = assetInfo.localUri || assetInfo.uri;
+        
+        // Share the photo directly using the URI
+        await Sharing.shareAsync(sourceUri, {
+          mimeType: 'image/jpeg',
+          dialogTitle: 'Share Photo',
+        });
+      } else {
+        Alert.alert('Error', 'Unable to access photo for sharing');
+      }
+    } catch (error) {
+      console.error('Error sharing photo:', error);
+      Alert.alert('Error', 'Failed to share photo');
+    }
+  };
+
   const gestureHandler = Gesture.Pan()
     .onBegin(() => {
       scale.value = withSpring(0.95);
@@ -994,6 +1025,24 @@ export default function App() {
                   <Animated.View style={[styles.cardContainer, animatedStyle]}>
                     <View style={styles.card}>
                       <Image source={{ uri: photo.uri }} style={styles.photo} />
+                      
+                      {/* Share Button - Top Right */}
+                      <TouchableOpacity 
+                        style={styles.shareButton} 
+                        onPress={() => sharePhoto(photo)}
+                        activeOpacity={0.7}
+                      >
+                        <LinearGradient
+                          colors={['#1a1a2e', '#16213e']} // Use app's gradient colors
+                          style={styles.shareButtonGradient}
+                        >
+                          <Ionicons 
+                            name="share-outline" 
+                            size={22} 
+                            color="rgba(76, 217, 100, 1)" 
+                          />
+                        </LinearGradient>
+                      </TouchableOpacity>
                       
                       {/* Keep Overlay */}
                       <Animated.View style={[styles.overlay, styles.keepOverlay, keepOverlayStyle]} pointerEvents="none">
@@ -1795,5 +1844,39 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     textAlign: 'center',
+  },
+  // Share Button Styles
+  shareButton: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    zIndex: 10,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+  },
+  shareButtonGradient: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(76, 217, 100, 0.6)', // Green border to match icon
+    shadowColor: 'rgba(76, 217, 100, 0.3)',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+  },
+  shareButtonIcon: {
+    fontSize: 22,
+    color: 'rgba(76, 217, 100, 1)', // Green color like keep functionality
+    fontWeight: 'bold',
+    textAlign: 'center',
+    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 2,
   },
 });
