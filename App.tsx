@@ -207,7 +207,28 @@ export default function App() {
 
   const requestPermissionAndLoadPhotos = async () => {
     try {
-      // Request both read and write permissions for full access
+      // Android 16 Fix: Check current permission status first
+      const currentPermission = await MediaLibrary.getPermissionsAsync();
+      
+      // If we already have granted permissions, skip the request and proceed directly
+      if (currentPermission.status === 'granted') {
+        setHasPermission(true);
+        
+        // Add small delay before loading photos to ensure smooth transition
+        await new Promise(resolve => setTimeout(resolve, 100));
+        await loadPhotos();
+        
+        if (currentPermission.accessPrivileges === 'limited') {
+          Alert.alert(
+            'Limited Access',
+            'You have granted limited photo access. For best experience, consider allowing full access in Settings.',
+            [{ text: 'OK' }]
+          );
+        }
+        return; // Exit early since we already have permissions
+      }
+      
+      // Only request permissions if we don't already have them
       const { status, accessPrivileges } = await MediaLibrary.requestPermissionsAsync(false); // false = read and write
       
       if (status === 'granted') {
