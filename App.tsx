@@ -105,6 +105,9 @@ export default function App() {
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [previewPhoto, setPreviewPhoto] = useState<LikedPhoto | null>(null);
   
+  // Like animation state
+  const [likeAnimations, setLikeAnimations] = useState<Array<{ id: string; x: number; y: number }>>([]);
+  
   // Trash modal pagination state
   const [displayedTrashPhotos, setDisplayedTrashPhotos] = useState<TrashedPhoto[]>([]);
   const [trashPage, setTrashPage] = useState(0);
@@ -137,6 +140,9 @@ export default function App() {
   const dot1Scale = useSharedValue(1);
   const dot2Scale = useSharedValue(1);
   const dot3Scale = useSharedValue(1);
+
+  // Like animation values (only opacity for floating hearts)
+  const likeOpacity = useSharedValue(1);
 
   // Fisher-Yates shuffle algorithm for truly random distribution
   const shuffleArray = (array: Photo[]): Photo[] => {
@@ -960,6 +966,34 @@ export default function App() {
     return likedPhotos.some(likedPhoto => likedPhoto.originalId === photoId);
   };
 
+  // Like animation function
+  const triggerLikeAnimation = () => {
+    // Calculate heart button position using actual screen dimensions
+    const cardWidth = screenWidth - 40; // Card takes full screen width minus 40px margin
+    const cardHeight = screenHeight * 0.6; // Card height
+    const heartButtonSize = 52; // Heart button is 52x52px
+    
+    // Heart button is positioned at bottom: 16, right: 16 within the card
+    const heartButtonCenterX = cardWidth - 16 - (heartButtonSize / 2); // Right edge minus margin minus half button
+    const heartButtonCenterY = cardHeight - 16 - (heartButtonSize / 2); // Bottom edge minus margin minus half button
+    
+    // Create floating hearts from the heart button center
+    const hearts = [];
+    for (let i = 0; i < 20; i++) {
+      hearts.push({
+        id: Math.random().toString(),
+        x: heartButtonCenterX, // Heart button center X
+        y: heartButtonCenterY, // Heart button center Y
+      });
+    }
+    setLikeAnimations(hearts);
+
+    // Clear animations after they finish (1.5x faster)
+    setTimeout(() => {
+      setLikeAnimations([]);
+    }, 1667); // 2500 / 1.5 = 1667
+  };
+
   const toggleLikePhoto = async (photo: Photo) => {
     try {
       const isCurrentlyLiked = isPhotoLiked(photo.id);
@@ -971,6 +1005,7 @@ export default function App() {
         await saveLikedPhotosMetadata(updatedLikedPhotos);
       } else {
         // Like the photo
+        triggerLikeAnimation(); // Trigger cute animation!
         const likedPhoto: LikedPhoto = {
           ...photo,
           originalId: photo.id,
@@ -1089,6 +1124,75 @@ export default function App() {
     const opacity = translateX.value < 0 ? Math.abs(translateX.value) / (screenWidth * 0.5) : 0;
     return {
       opacity: Math.min(opacity, 0.8),
+    };
+  });
+
+  // Floating Hearts Component
+  const FloatingHeart = ({ x, y }: { x: number; y: number }) => {
+    const translateY = useSharedValue(0);
+    const translateX = useSharedValue(0);
+    const opacity = useSharedValue(1);
+    const scale = useSharedValue(0);
+
+    React.useEffect(() => {
+      // Start with small scale and pop in immediately
+      scale.value = 0;
+      scale.value = withSpring(1, { damping: 12, stiffness: 400 });
+      
+      // Calculate movement towards photo center using actual screen dimensions
+      const cardWidth = screenWidth - 40;
+      const cardHeight = screenHeight * 0.6;
+      const photoCenterX = cardWidth / 2; // Center X of the photo
+      const photoCenterY = (cardHeight - 100) / 2; // Center Y of the photo (accounting for button space)
+      
+      // Calculate direction from heart button to photo center with increased randomness for more spread
+      const targetX = photoCenterX - x + (Math.random() - 0.5) * 120; // Increased spread
+      const targetY = photoCenterY - y + (Math.random() - 0.5) * 120; // Increased spread
+      
+      // Start movement immediately with varied speeds for organic feel
+      const animationDuration = 1067 + Math.random() * 267; // Varied animation duration
+      translateX.value = withTiming(targetX, { duration: animationDuration });
+      translateY.value = withTiming(targetY, { duration: animationDuration });
+      
+      // Fade out animation starts after movement begins
+      setTimeout(() => {
+        opacity.value = withTiming(0, { duration: 400 });
+      }, 933);
+
+      // Clean up after animation completes
+      const timer = setTimeout(() => {
+        setLikeAnimations(prev => prev.filter(heart => heart.x !== x || heart.y !== y));
+      }, 1667);
+
+      return () => clearTimeout(timer);
+    }, [x, y]);
+
+    const animatedStyle = useAnimatedStyle(() => ({
+      position: 'absolute',
+      left: x,
+      top: y,
+      transform: [
+        { translateX: translateX.value },
+        { translateY: translateY.value },
+        { scale: scale.value },
+      ],
+      opacity: opacity.value,
+    }));
+
+    const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#96CEB4', '#FFEAA7', '#DDA0DD', '#FF8A95', '#A8E6CF'];
+    const randomColor = colors[Math.floor(Math.random() * colors.length)];
+
+    return (
+      <Animated.View style={animatedStyle}>
+        <Ionicons name="heart" size={16} color={randomColor} />
+      </Animated.View>
+    );
+  };
+
+  // Heart button animation style (removed scaling)
+  const heartButtonAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      // No animation on the button itself
     };
   });
 
@@ -1383,22 +1487,29 @@ export default function App() {
                       </TouchableOpacity>
                       
                       {/* Heart Button - Bottom Right */}
-                      <TouchableOpacity 
-                        style={styles.heartButton} 
-                        onPress={() => toggleLikePhoto(photo)}
-                        activeOpacity={0.7}
-                      >
-                        <LinearGradient
-                          colors={['#1a1a2e', '#16213e']} // Use app's gradient colors
-                          style={styles.heartButtonGradient}
+                      <Animated.View style={heartButtonAnimatedStyle}>
+                        <TouchableOpacity 
+                          style={styles.heartButton} 
+                          onPress={() => toggleLikePhoto(photo)}
+                          activeOpacity={0.7}
                         >
-                          <Ionicons 
-                            name={isPhotoLiked(photo.id) ? "heart" : "heart-outline"} 
-                            size={22} 
-                            color={isPhotoLiked(photo.id) ? "rgba(255, 69, 69, 1)" : "rgba(255, 69, 69, 0.7)"} 
-                          />
-                        </LinearGradient>
-                      </TouchableOpacity>
+                          <LinearGradient
+                            colors={['#1a1a2e', '#16213e']} // Use app's gradient colors
+                            style={styles.heartButtonGradient}
+                          >
+                            <Ionicons 
+                              name={isPhotoLiked(photo.id) ? "heart" : "heart-outline"} 
+                              size={22} 
+                              color={isPhotoLiked(photo.id) ? "rgba(255, 69, 69, 1)" : "rgba(255, 69, 69, 0.7)"} 
+                            />
+                          </LinearGradient>
+                        </TouchableOpacity>
+                      </Animated.View>
+
+                      {/* Floating Hearts Animation */}
+                      {likeAnimations.map((heart) => (
+                        <FloatingHeart key={heart.id} x={heart.x} y={heart.y} />
+                      ))}
                       
                       {/* Keep Overlay */}
                       <Animated.View style={[styles.overlay, styles.keepOverlay, keepOverlayStyle]} pointerEvents="none">
@@ -1626,32 +1737,41 @@ export default function App() {
                 </View>
               ) : (
                 <FlatList
-                  key="favorites-flatlist"
-                  data={likedPhotos}
-                  keyExtractor={(item, index) => `fav-${item.originalId}-${item.likedAt}-${index}`}
+                  data={[...likedPhotos].sort((a, b) => b.likedAt - a.likedAt)}
+                  keyExtractor={(item, index) => `liked-${item.originalId}-${index}`}
+                  numColumns={2}
+                  columnWrapperStyle={styles.trashRow}
                   style={styles.trashGrid}
                   contentContainerStyle={styles.trashGridContent}
-                  removeClippedSubviews={true}
-                  maxToRenderPerBatch={5}
-                  windowSize={5}
-                  initialNumToRender={10}
+                  showsVerticalScrollIndicator={false}
                   renderItem={({ item: photo }: { item: LikedPhoto }) => (
                     <View style={styles.trashItem}>
                       <TouchableOpacity onPress={() => openPhotoPreview(photo)} activeOpacity={0.8}>
                         <Image source={{ uri: photo.uri }} style={styles.trashPhoto} />
                       </TouchableOpacity>
-                      <View style={styles.trashActions}>
-                        <TouchableOpacity
-                          style={styles.restoreButton}
-                          onPress={() => toggleLikePhoto(photo)}
-                          activeOpacity={0.8}
+                      
+                      {/* Share Button - Top Right Corner */}
+                      <TouchableOpacity
+                        style={styles.overlayShareButton}
+                        onPress={() => sharePreviewPhoto(photo)}
+                        activeOpacity={0.8}
+                      >
+                        <LinearGradient
+                          colors={['#1a1a2e', '#16213e']}
+                          style={styles.overlayShareButtonGradient}
                         >
-                          <Text style={styles.restoreButtonText}>Remove</Text>
-                        </TouchableOpacity>
-                      </View>
-                      <Text style={styles.trashDate}>
-                        {new Date(photo.likedAt).toLocaleDateString()}
-                      </Text>
+                          <Ionicons name="share-outline" size={18} color="rgba(76, 217, 100, 1)" />
+                        </LinearGradient>
+                      </TouchableOpacity>
+                      
+                      {/* Remove Button - Bottom Right Corner */}
+                      <TouchableOpacity
+                        style={styles.overlayRemoveButtonBottom}
+                        onPress={() => toggleLikePhoto(photo)}
+                        activeOpacity={0.8}
+                      >
+                        <Ionicons name="trash-outline" size={18} color="rgba(255, 69, 69, 0.7)" />
+                      </TouchableOpacity>
                     </View>
                   )}
                 />
@@ -2117,11 +2237,64 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     marginBottom: 15,
     overflow: 'hidden',
+    flex: 1,
+    marginHorizontal: 5,
+    maxWidth: '45%', // Ensure 2 columns fit properly
   },
   trashPhoto: {
     width: '100%',
-    height: 200,
-    resizeMode: 'cover',
+    height: 260, // Bigger photos for better visibility
+    resizeMode: 'contain', // Show full photo
+  },
+  trashRow: {
+    justifyContent: 'space-between',
+    paddingHorizontal: 10,
+  },
+  overlayRemoveButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    borderRadius: 20,
+    padding: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  overlayShareButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    zIndex: 10,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+  },
+  overlayShareButtonGradient: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(76, 217, 100, 0.6)', // Green border to match icon
+  },
+  overlayRemoveButtonBottom: {
+    position: 'absolute',
+    bottom: 8,
+    right: 8,
+    backgroundColor: 'rgba(22, 33, 62, 0.9)', // Using our gradient color (dark navy)
+    borderRadius: 20,
+    padding: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
   },
   trashActions: {
     padding: 15,

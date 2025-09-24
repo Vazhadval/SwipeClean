@@ -2,7 +2,7 @@
   "expo": {
     "name": "SwipeClean",
     "slug": "swipe-clean-app",
-    "version": "1.3.0",
+    "version": "1.2.1",
     "orientation": "portrait",
     "icon": "./assets/logo.png",
     "userInterfaceStyle": "light",
