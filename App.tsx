@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   StyleSheet,
   Text,
@@ -12,6 +12,7 @@ import {
   TouchableOpacity,
   ScrollView,
   Modal,
+  FlatList,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as MediaLibrary from 'expo-media-library';
@@ -95,6 +96,11 @@ export default function App() {
   const [showTrashModal, setShowTrashModal] = useState(false);
   const [showConfirmEmptyModal, setShowConfirmEmptyModal] = useState(false);
   
+  // Trash modal pagination state
+  const [displayedTrashPhotos, setDisplayedTrashPhotos] = useState<TrashedPhoto[]>([]);
+  const [trashPage, setTrashPage] = useState(0);
+  const [isLoadingMoreTrash, setIsLoadingMoreTrash] = useState(false);
+  
   // New state for batch loading
   const [totalPhotosFound, setTotalPhotosFound] = useState(0);
   const [photosLoadedSoFar, setPhotosLoadedSoFar] = useState(0);
@@ -106,6 +112,9 @@ export default function App() {
   const [previousAction, setPreviousAction] = useState<'keep' | 'delete' | null>(null);
 
   const TRASH_DIR = `${FileSystem.documentDirectory}trash/`;
+  
+  // Pagination constants
+  const TRASH_PHOTOS_PER_PAGE = 5; // Load 5 photos at a time for better performance
 
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
@@ -302,11 +311,15 @@ export default function App() {
       setLoadingMessage('Processing initial photos...');
       await new Promise(resolve => setTimeout(resolve, 300));
 
-      const initialPhotos: Photo[] = firstBatch.assets.map((asset) => ({
+      const allInitialPhotos: Photo[] = firstBatch.assets.map((asset) => ({
         id: asset.id,
         uri: asset.uri,
         filename: asset.filename,
       }));
+
+      // Filter out photos that are already in trash
+      const trashedPhotoIds = new Set(trashedPhotos.map(tp => tp.originalId));
+      const initialPhotos = allInitialPhotos.filter(photo => !trashedPhotoIds.has(photo.id));
 
       setLoadingProgress(80);
       setLoadingMessage('Shuffling photos...');
@@ -352,11 +365,15 @@ export default function App() {
           sortBy: 'creationTime',
         });
 
-        const batchPhotos: Photo[] = batch.assets.map((asset) => ({
+        const allBatchPhotos: Photo[] = batch.assets.map((asset) => ({
           id: asset.id,
           uri: asset.uri,
           filename: asset.filename,
         }));
+
+        // Filter out photos that are already in trash
+        const trashedPhotoIds = new Set(trashedPhotos.map(tp => tp.originalId));
+        const batchPhotos = allBatchPhotos.filter(photo => !trashedPhotoIds.has(photo.id));
 
         // Add batch to existing photos and update progress immediately
         setPhotos(prevPhotos => [...prevPhotos, ...batchPhotos]);
@@ -394,11 +411,15 @@ export default function App() {
         sortBy: 'creationTime',
       });
 
-      const batchPhotos: Photo[] = batch.assets.map((asset) => ({
+      const allBatchPhotos: Photo[] = batch.assets.map((asset) => ({
         id: asset.id,
         uri: asset.uri,
         filename: asset.filename,
       }));
+
+      // Filter out photos that are already in trash
+      const trashedPhotoIds = new Set(trashedPhotos.map(tp => tp.originalId));
+      const batchPhotos = allBatchPhotos.filter(photo => !trashedPhotoIds.has(photo.id));
 
       const shuffledBatch = shuffleArray(batchPhotos);
 
@@ -484,6 +505,13 @@ export default function App() {
         throw new Error('Invalid photo object');
       }
 
+      // Check if photo is already in trash
+      const isAlreadyTrashed = trashedPhotos.some(tp => tp.originalId === photo.id);
+      if (isAlreadyTrashed) {
+        console.log('Photo is already in trash, skipping...');
+        return;
+      }
+
       // Move to app's trash folder (no confirmation dialog)
       const timestamp = Date.now();
       const trashFileName = `${timestamp}_${photo.filename}`;
@@ -514,7 +542,7 @@ export default function App() {
           ...photo,
           trashedAt: timestamp,
           trashPath: trashPath,
-          originalId: photo.id,
+          originalId: photo.id || `photo-${timestamp}`, // Ensure originalId is never empty
           uri: trashPath,
           size: fileSize // Store file size in bytes
         };
@@ -556,12 +584,29 @@ export default function App() {
         const metadataContent = await FileSystem.readAsStringAsync(metadataPath);
         const metadata = JSON.parse(metadataContent) as TrashedPhoto[];
         
-        // Verify files still exist and filter out missing ones
+        // Verify files still exist and filter out missing ones, also deduplicate by originalId
         const validTrashedPhotos = [];
+        const seenIds = new Set<string>();
+        
         for (const trashedPhoto of metadata) {
+          // Skip items without valid originalId
+          if (!trashedPhoto.originalId || typeof trashedPhoto.originalId !== 'string') {
+            console.warn('Skipping trash item with invalid originalId:', trashedPhoto);
+            continue;
+          }
+          
+          // Skip duplicates (keep the first occurrence)
+          if (seenIds.has(trashedPhoto.originalId)) {
+            console.warn('Skipping duplicate trash item:', trashedPhoto.originalId);
+            continue;
+          }
+          
           const fileInfo = await FileSystem.getInfoAsync(trashedPhoto.trashPath);
           if (fileInfo.exists) {
             validTrashedPhotos.push(trashedPhoto);
+            seenIds.add(trashedPhoto.originalId);
+          } else {
+            console.warn('Skipping trash item with missing file:', trashedPhoto.trashPath);
           }
         }
         
@@ -588,13 +633,19 @@ export default function App() {
 
   const restorePhoto = async (trashedPhoto: TrashedPhoto) => {
     try {
-      // Just remove from trash folder - the original photo is still in media library
-      await FileSystem.deleteAsync(trashedPhoto.trashPath);
+      // Check if the file exists before trying to delete it
+      const fileInfo = await FileSystem.getInfoAsync(trashedPhoto.trashPath);
+      if (fileInfo.exists) {
+        // Remove from trash folder - the original photo is still in media library
+        await FileSystem.deleteAsync(trashedPhoto.trashPath);
+      }
       
       // Remove from trashed photos list
       const updatedTrashedPhotos = trashedPhotos.filter(tp => tp.trashedAt !== trashedPhoto.trashedAt);
       setTrashedPhotos(updatedTrashedPhotos);
       await saveTrashedPhotosMetadata(updatedTrashedPhotos);
+      
+      // The useEffect will handle updating displayedTrashPhotos when trashedPhotos changes
       
       // Note: No need to create asset back in media library since we never actually deleted it
       // The photo will appear again in the next photo load from MediaLibrary.getAssetsAsync
@@ -614,6 +665,77 @@ export default function App() {
       }
     } catch (error) {
       console.error('Error restoring photo from trash:', error);
+    }
+  };
+
+  const restoreAllPhotos = async () => {
+    try {
+      const totalPhotos = trashedPhotos.length;
+      
+      if (totalPhotos === 0) {
+        Alert.alert('Info', 'No photos to restore');
+        return;
+      }
+
+      // Show confirmation dialog
+      Alert.alert(
+        'Restore All Photos',
+        `Are you sure you want to restore all ${totalPhotos} photos from trash?`,
+        [
+          {
+            text: 'Cancel',
+            style: 'cancel'
+          },
+          {
+            text: 'Restore All',
+            style: 'default',
+            onPress: async () => {
+              // Create a copy of the array to avoid mutation during iteration
+              const photosToRestore = [...trashedPhotos];
+              let restoredCount = 0;
+              let failedCount = 0;
+
+              for (const photo of photosToRestore) {
+                try {
+                  // Just remove from trash folder - the original photo is still in media library
+                  await FileSystem.deleteAsync(photo.trashPath);
+                  restoredCount++;
+                } catch (error) {
+                  console.error(`Failed to restore photo ${photo.originalId}:`, error);
+                  failedCount++;
+                }
+              }
+
+              // Clear all trashed photos after restoration
+              setTrashedPhotos([]);
+              setDisplayedTrashPhotos([]);
+              await saveTrashedPhotosMetadata([]);
+
+              // Close the trash modal since it's now empty
+              setShowTrashModal(false);
+
+              // Show result
+              if (failedCount === 0) {
+                Alert.alert(
+                  'Success! 🎉',
+                  `All ${restoredCount} photos have been restored`,
+                  [{ text: 'Great!', style: 'default' }]
+                );
+              } else {
+                Alert.alert(
+                  'Partially Restored ⚠️',
+                  `${restoredCount} photos restored successfully, ${failedCount} failed`,
+                  [{ text: 'OK', style: 'default' }]
+                );
+              }
+            }
+          }
+        ]
+      );
+      
+    } catch (error) {
+      console.error('Error restoring all photos:', error);
+      Alert.alert('Error', 'Failed to restore all photos');
     }
   };
 
@@ -681,6 +803,101 @@ export default function App() {
     const totalBytes = trashedPhotos.reduce((sum, photo) => sum + (photo.size || 0), 0);
     return (totalBytes / (1024 * 1024)).toFixed(2); // Convert to MB
   };
+
+  // Clean up trash data to remove any duplicates or invalid entries
+  const cleanupTrashData = (photos: TrashedPhoto[]): TrashedPhoto[] => {
+    const seen = new Set<string>();
+    const cleaned: TrashedPhoto[] = [];
+    
+    for (const photo of photos) {
+      // Ensure photo has valid originalId
+      if (!photo.originalId || typeof photo.originalId !== 'string') {
+        console.warn('Removing trash item with invalid originalId:', photo);
+        continue;
+      }
+      
+      // Skip duplicates
+      if (seen.has(photo.originalId)) {
+        console.warn('Removing duplicate trash item:', photo.originalId);
+        continue;
+      }
+      
+      seen.add(photo.originalId);
+      cleaned.push(photo);
+    }
+    
+    return cleaned;
+  };
+
+  // Trash pagination helpers
+  const initializeTrashPagination = () => {
+    setTrashPage(0);
+    setIsLoadingMoreTrash(false);
+    
+    // Clean up data before pagination
+    const cleanedPhotos = cleanupTrashData(trashedPhotos);
+    if (cleanedPhotos.length !== trashedPhotos.length) {
+      console.log(`Cleaned up ${trashedPhotos.length - cleanedPhotos.length} duplicate/invalid trash items`);
+      setTrashedPhotos(cleanedPhotos);
+      saveTrashedPhotosMetadata(cleanedPhotos);
+    }
+    
+    const initialPhotos = cleanedPhotos.slice(0, TRASH_PHOTOS_PER_PAGE);
+    setDisplayedTrashPhotos(initialPhotos);
+  };
+
+  const loadMoreTrashPhotos = () => {
+    if (isLoadingMoreTrash) return;
+    
+    const nextPage = trashPage + 1;
+    const startIndex = nextPage * TRASH_PHOTOS_PER_PAGE;
+    const endIndex = startIndex + TRASH_PHOTOS_PER_PAGE;
+    
+    if (startIndex >= trashedPhotos.length) return;
+    
+    setIsLoadingMoreTrash(true);
+    
+    const nextBatch = trashedPhotos.slice(startIndex, endIndex);
+    setDisplayedTrashPhotos(prev => [...prev, ...nextBatch]);
+    
+    setTrashPage(nextPage);
+    setIsLoadingMoreTrash(false);
+  };
+
+  // Update displayed photos when trashedPhotos changes
+  useEffect(() => {
+    if (showTrashModal) {
+      // Small delay to ensure state updates are complete
+      const timer = setTimeout(() => {
+        initializeTrashPagination();
+      }, 10);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [trashedPhotos, showTrashModal]);
+
+  // Memoized render function for trash items to improve performance
+  const renderTrashItem = useCallback(({ item: photo }: { item: TrashedPhoto }) => (
+    <View style={styles.trashItem}>
+      <Image 
+        source={{ uri: photo.uri }} 
+        style={styles.trashPhoto}
+        resizeMode="cover"
+        loadingIndicatorSource={{ uri: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==' }}
+      />
+      <View style={styles.trashActions}>
+        <TouchableOpacity
+          style={styles.restoreButton}
+          onPress={() => restorePhoto(photo)}
+        >
+          <Text style={styles.restoreButtonText}>Restore</Text>
+        </TouchableOpacity>
+      </View>
+      <Text style={styles.trashDate}>
+        {new Date(photo.trashedAt).toLocaleDateString()}
+      </Text>
+    </View>
+  ), [restorePhoto]);
 
   const resetCards = () => {
     setCurrentPhotoIndex(0);
@@ -948,7 +1165,13 @@ export default function App() {
                         <Text style={styles.trashSizeText}> • {getTotalTrashSize()} MB</Text>
                       )}
                     </Text>
-                    <View style={{ width: 24 }} />
+                    {trashedPhotos.length > 0 ? (
+                      <TouchableOpacity onPress={restoreAllPhotos} style={styles.restoreAllButton}>
+                        <Text style={styles.restoreAllButtonText}>↶</Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <View style={{ width: 24 }} />
+                    )}
                   </View>
                   
                   {trashedPhotos.length === 0 ? (
@@ -957,24 +1180,27 @@ export default function App() {
                       <Text style={styles.emptyTrashMessage}>Trash is empty</Text>
                     </View>
                   ) : (
-                    <ScrollView style={styles.trashGrid} contentContainerStyle={styles.trashGridContent}>
-                      {trashedPhotos.map((photo) => (
-                        <View key={photo.trashedAt} style={styles.trashItem}>
-                          <Image source={{ uri: photo.uri }} style={styles.trashPhoto} />
-                          <View style={styles.trashActions}>
-                            <TouchableOpacity
-                              style={styles.restoreButton}
-                              onPress={() => restorePhoto(photo)}
-                            >
-                              <Text style={styles.restoreButtonText}>Restore</Text>
-                            </TouchableOpacity>
+                    <FlatList
+                      key="trash-flatlist-single-column"
+                      data={displayedTrashPhotos}
+                      keyExtractor={(item, index) => `trash-${item.originalId}-${item.trashedAt}-${index}`}
+                      style={styles.trashGrid}
+                      contentContainerStyle={styles.trashGridContent}
+                      onEndReached={loadMoreTrashPhotos}
+                      onEndReachedThreshold={0.5}
+                      removeClippedSubviews={true}
+                      maxToRenderPerBatch={3}
+                      windowSize={5}
+                      initialNumToRender={5}
+                      renderItem={renderTrashItem}
+                      ListFooterComponent={() => 
+                        isLoadingMoreTrash ? (
+                          <View style={styles.loadingMoreContainer}>
+                            <Text style={styles.loadingMoreText}>Loading more photos...</Text>
                           </View>
-                          <Text style={styles.trashDate}>
-                            {new Date(photo.trashedAt).toLocaleDateString()}
-                          </Text>
-                        </View>
-                      ))}
-                    </ScrollView>
+                        ) : null
+                      }
+                    />
                   )}
                   
                   {/* Bottom Empty Button */}
@@ -1146,8 +1372,19 @@ export default function App() {
                 <TouchableOpacity onPress={() => setShowTrashModal(false)}>
                   <Text style={styles.closeButton}>✕</Text>
                 </TouchableOpacity>
-                <Text style={styles.modalTitle}>Trash ({trashedPhotos.length})</Text>
-                <View style={{ width: 24 }} />
+                <Text style={styles.modalTitle}>
+                  Trash ({trashedPhotos.length})
+                  {trashedPhotos.length > 0 && (
+                    <Text style={styles.trashSizeText}> • {getTotalTrashSize()} MB</Text>
+                  )}
+                </Text>
+                {trashedPhotos.length > 0 ? (
+                  <TouchableOpacity onPress={restoreAllPhotos} style={styles.restoreAllButton}>
+                    <Text style={styles.restoreAllButtonText}>↶</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <View style={{ width: 24 }} />
+                )}
               </View>
               
               {trashedPhotos.length === 0 ? (
@@ -1156,24 +1393,27 @@ export default function App() {
                   <Text style={styles.emptyTrashMessage}>Trash is empty</Text>
                 </View>
               ) : (
-                <ScrollView style={styles.trashGrid} contentContainerStyle={styles.trashGridContent}>
-                  {trashedPhotos.map((photo) => (
-                    <View key={photo.trashedAt} style={styles.trashItem}>
-                      <Image source={{ uri: photo.uri }} style={styles.trashPhoto} />
-                      <View style={styles.trashActions}>
-                        <TouchableOpacity
-                          style={styles.restoreButton}
-                          onPress={() => restorePhoto(photo)}
-                        >
-                          <Text style={styles.restoreButtonText}>Restore</Text>
-                        </TouchableOpacity>
+                <FlatList
+                  key="trash-flatlist-single-column-2"
+                  data={displayedTrashPhotos}
+                  keyExtractor={(item, index) => `trash-${item.originalId}-${item.trashedAt}-${index}`}
+                  style={styles.trashGrid}
+                  contentContainerStyle={styles.trashGridContent}
+                  onEndReached={loadMoreTrashPhotos}
+                  onEndReachedThreshold={0.5}
+                  removeClippedSubviews={true}
+                  maxToRenderPerBatch={3}
+                  windowSize={5}
+                  initialNumToRender={5}
+                  renderItem={renderTrashItem}
+                  ListFooterComponent={() => 
+                    isLoadingMoreTrash ? (
+                      <View style={styles.loadingMoreContainer}>
+                        <Text style={styles.loadingMoreText}>Loading more photos...</Text>
                       </View>
-                      <Text style={styles.trashDate}>
-                        {new Date(photo.trashedAt).toLocaleDateString()}
-                      </Text>
-                    </View>
-                  ))}
-                </ScrollView>
+                    ) : null
+                  }
+                />
               )}
               
               {/* Bottom Empty Button */}
@@ -1906,5 +2146,39 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0, 0, 0, 0.3)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
+  },
+  // Trash Modal Lazy Loading Styles
+  loadingMoreContainer: {
+    padding: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingMoreText: {
+    color: THEME_COLORS.secondaryText,
+    fontSize: 14,
+    fontWeight: '500',
+    opacity: 0.8,
+  },
+  // Restore All Button Styles
+  restoreAllButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(0, 255, 208, 0.15)',
+    borderWidth: 1,
+    borderColor: THEME_COLORS.accent,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: THEME_COLORS.accent,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  restoreAllButtonText: {
+    fontSize: 18,
+    color: THEME_COLORS.accent,
+    fontWeight: 'bold',
+    textAlign: 'center',
   },
 });
