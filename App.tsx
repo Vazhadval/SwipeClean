@@ -83,6 +83,11 @@ interface TrashedPhoto extends Photo {
   size: number; // File size in bytes
 }
 
+interface LikedPhoto extends Photo {
+  likedAt: number;
+  originalId: string;
+}
+
 export default function App() {
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0);
@@ -93,8 +98,12 @@ export default function App() {
   const [storageFreed, setStorageFreed] = useState(0); // MB freed this session
   const [photosProcessed, setPhotosProcessed] = useState(0); // Total photos reviewed
   const [trashedPhotos, setTrashedPhotos] = useState<TrashedPhoto[]>([]);
+  const [likedPhotos, setLikedPhotos] = useState<LikedPhoto[]>([]);
   const [showTrashModal, setShowTrashModal] = useState(false);
+  const [showFavoritesModal, setShowFavoritesModal] = useState(false);
   const [showConfirmEmptyModal, setShowConfirmEmptyModal] = useState(false);
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [previewPhoto, setPreviewPhoto] = useState<LikedPhoto | null>(null);
   
   // Trash modal pagination state
   const [displayedTrashPhotos, setDisplayedTrashPhotos] = useState<TrashedPhoto[]>([]);
@@ -143,6 +152,7 @@ export default function App() {
     requestPermissionAndLoadPhotos();
     createTrashDirectory();
     loadTrashedPhotos();
+    loadLikedPhotos();
   }, []);
 
   // Smart preloading: Check if we need to load more photos when user is running low
@@ -945,6 +955,82 @@ export default function App() {
     }
   };
 
+  // Liked photos functions
+  const isPhotoLiked = (photoId: string): boolean => {
+    return likedPhotos.some(likedPhoto => likedPhoto.originalId === photoId);
+  };
+
+  const toggleLikePhoto = async (photo: Photo) => {
+    try {
+      const isCurrentlyLiked = isPhotoLiked(photo.id);
+      
+      if (isCurrentlyLiked) {
+        // Unlike the photo
+        const updatedLikedPhotos = likedPhotos.filter(lp => lp.originalId !== photo.id);
+        setLikedPhotos(updatedLikedPhotos);
+        await saveLikedPhotosMetadata(updatedLikedPhotos);
+      } else {
+        // Like the photo
+        const likedPhoto: LikedPhoto = {
+          ...photo,
+          originalId: photo.id,
+          likedAt: Date.now(),
+        };
+        const updatedLikedPhotos = [...likedPhotos, likedPhoto];
+        setLikedPhotos(updatedLikedPhotos);
+        await saveLikedPhotosMetadata(updatedLikedPhotos);
+      }
+    } catch (error) {
+      console.error('Error toggling like photo:', error);
+      Alert.alert('Error', 'Failed to update favorite');
+    }
+  };
+
+  const saveLikedPhotosMetadata = async (photos: LikedPhoto[]) => {
+    try {
+      const metadataPath = `${FileSystem.documentDirectory}liked_metadata.json`;
+      await FileSystem.writeAsStringAsync(metadataPath, JSON.stringify(photos));
+    } catch (error) {
+      console.error('Error saving liked photos metadata:', error);
+    }
+  };
+
+  const openPhotoPreview = (photo: LikedPhoto) => {
+    setPreviewPhoto(photo);
+    setShowPreviewModal(true);
+  };
+
+  const sharePreviewPhoto = async (photo: LikedPhoto) => {
+    try {
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(photo.uri, {
+          mimeType: 'image/jpeg',
+          dialogTitle: 'Share photo',
+        });
+      } else {
+        Alert.alert('Error', 'Sharing is not available on this device');
+      }
+    } catch (error) {
+      console.error('Error sharing preview photo:', error);
+      Alert.alert('Error', 'Failed to share photo');
+    }
+  };
+
+  const loadLikedPhotos = async () => {
+    try {
+      const metadataPath = `${FileSystem.documentDirectory}liked_metadata.json`;
+      const fileInfo = await FileSystem.getInfoAsync(metadataPath);
+      
+      if (fileInfo.exists) {
+        const data = await FileSystem.readAsStringAsync(metadataPath);
+        const metadata = JSON.parse(data) as LikedPhoto[];
+        setLikedPhotos(metadata);
+      }
+    } catch (error) {
+      console.error('Error loading liked photos:', error);
+    }
+  };
+
   const gestureHandler = Gesture.Pan()
     .onBegin(() => {
       scale.value = withSpring(0.95);
@@ -1132,6 +1218,7 @@ export default function App() {
               </LinearGradient>
             </TouchableOpacity>
 
+
             {/* Undo Button - also available on completed screen */}
             {canUndo && (
               <TouchableOpacity style={styles.undoButton} onPress={handleUndo}>
@@ -1295,6 +1382,24 @@ export default function App() {
                         </LinearGradient>
                       </TouchableOpacity>
                       
+                      {/* Heart Button - Bottom Right */}
+                      <TouchableOpacity 
+                        style={styles.heartButton} 
+                        onPress={() => toggleLikePhoto(photo)}
+                        activeOpacity={0.7}
+                      >
+                        <LinearGradient
+                          colors={['#1a1a2e', '#16213e']} // Use app's gradient colors
+                          style={styles.heartButtonGradient}
+                        >
+                          <Ionicons 
+                            name={isPhotoLiked(photo.id) ? "heart" : "heart-outline"} 
+                            size={22} 
+                            color={isPhotoLiked(photo.id) ? "rgba(255, 69, 69, 1)" : "rgba(255, 69, 69, 0.7)"} 
+                          />
+                        </LinearGradient>
+                      </TouchableOpacity>
+                      
                       {/* Keep Overlay */}
                       <Animated.View style={[styles.overlay, styles.keepOverlay, keepOverlayStyle]} pointerEvents="none">
                         <Text style={styles.overlayText}>KEEP</Text>
@@ -1320,6 +1425,20 @@ export default function App() {
           })}
         </View>
 
+        {/* Favorites Button */}
+        <TouchableOpacity 
+          style={styles.favoritesButton}
+          onPress={() => setShowFavoritesModal(true)}
+        >
+          <LinearGradient
+            colors={['rgba(255, 255, 255, 0.15)', 'rgba(255, 255, 255, 0.05)']}
+            style={styles.favoritesButtonGradient}
+          >
+            <Ionicons name="heart" size={20} color="#ff6b6b" />
+            <Text style={styles.favoritesButtonText}>Favourites ({likedPhotos.length})</Text>
+          </LinearGradient>
+        </TouchableOpacity>
+
         {/* Instructions */}
         <View style={styles.instructions}>
           <Text style={styles.instructionText}>
@@ -1341,6 +1460,8 @@ export default function App() {
             )}
           </LinearGradient>
         </TouchableOpacity>
+
+
 
         {/* Undo Button - opposite side of trash button */}
         {canUndo && (
@@ -1472,6 +1593,120 @@ export default function App() {
             </View>
           </View>
         </Modal>
+
+        {/* Favorites Modal */}
+        <Modal
+          visible={showFavoritesModal}
+          animationType="slide"
+          presentationStyle="pageSheet"
+          onRequestClose={() => setShowFavoritesModal(false)}
+        >
+          <SafeAreaView style={styles.modalContainer}>
+            <LinearGradient
+              colors={THEME_COLORS.gradient}
+              style={styles.modalGradient}
+            >
+              <View style={styles.modalHeader}>
+                <TouchableOpacity onPress={() => setShowFavoritesModal(false)}>
+                  <Text style={styles.closeButton}>✕</Text>
+                </TouchableOpacity>
+                <Text style={styles.modalTitle}>
+                  Favorite Photos ❤️ ({likedPhotos.length})
+                </Text>
+                <TouchableOpacity onPress={() => setShowFavoritesModal(false)}>
+                  <Text style={styles.doneButton}>Done</Text>
+                </TouchableOpacity>
+              </View>
+              
+              {likedPhotos.length === 0 ? (
+                <View style={styles.emptyTrashContainer}>
+                  <Text style={styles.emptyTrashText}>❤️</Text>
+                  <Text style={styles.emptyTrashMessage}>No favorite photos yet</Text>
+                  <Text style={styles.emptyTrashSubMessage}>Tap the heart icon on photos you love!</Text>
+                </View>
+              ) : (
+                <FlatList
+                  key="favorites-flatlist"
+                  data={likedPhotos}
+                  keyExtractor={(item, index) => `fav-${item.originalId}-${item.likedAt}-${index}`}
+                  style={styles.trashGrid}
+                  contentContainerStyle={styles.trashGridContent}
+                  removeClippedSubviews={true}
+                  maxToRenderPerBatch={5}
+                  windowSize={5}
+                  initialNumToRender={10}
+                  renderItem={({ item: photo }: { item: LikedPhoto }) => (
+                    <View style={styles.trashItem}>
+                      <TouchableOpacity onPress={() => openPhotoPreview(photo)} activeOpacity={0.8}>
+                        <Image source={{ uri: photo.uri }} style={styles.trashPhoto} />
+                      </TouchableOpacity>
+                      <View style={styles.trashActions}>
+                        <TouchableOpacity
+                          style={styles.restoreButton}
+                          onPress={() => toggleLikePhoto(photo)}
+                          activeOpacity={0.8}
+                        >
+                          <Text style={styles.restoreButtonText}>Remove</Text>
+                        </TouchableOpacity>
+                      </View>
+                      <Text style={styles.trashDate}>
+                        {new Date(photo.likedAt).toLocaleDateString()}
+                      </Text>
+                    </View>
+                  )}
+                />
+              )}
+            </LinearGradient>
+          </SafeAreaView>
+        </Modal>
+
+        {/* Photo Preview Modal */}
+        <Modal
+          visible={showPreviewModal}
+          animationType="fade"
+          presentationStyle="overFullScreen"
+          onRequestClose={() => setShowPreviewModal(false)}
+        >
+          <View style={styles.previewModalContainer}>
+            <LinearGradient
+              colors={THEME_COLORS.gradient}
+              style={styles.previewModalGradient}
+            >
+              {/* Close Button */}
+              <TouchableOpacity
+                style={styles.previewCloseButton}
+                onPress={() => setShowPreviewModal(false)}
+              >
+                <Text style={styles.previewCloseText}>✕</Text>
+              </TouchableOpacity>
+
+              {/* Photo */}
+              {previewPhoto && (
+                <View style={styles.previewPhotoContainer}>
+                  <Image source={{ uri: previewPhoto.uri }} style={styles.previewPhoto} />
+                  
+                  {/* Share Button - Top Right */}
+                  <TouchableOpacity 
+                    style={styles.previewShareButton} 
+                    onPress={() => sharePreviewPhoto(previewPhoto)}
+                    activeOpacity={0.7}
+                  >
+                    <LinearGradient
+                      colors={['#1a1a2e', '#16213e']}
+                      style={styles.previewShareButtonGradient}
+                    >
+                      <Ionicons 
+                        name="share-outline" 
+                        size={24} 
+                        color="rgba(76, 217, 100, 1)" 
+                      />
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </LinearGradient>
+          </View>
+        </Modal>
       </SafeAreaView>
     </LinearGradient>
   </GestureHandlerRootView>
@@ -1541,6 +1776,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 20,
+    marginTop: -20, // Move up slightly to make room for favorites button
   },
   cardContainer: {
     position: 'absolute',
@@ -1746,6 +1982,7 @@ const styles = StyleSheet.create({
     elevation: 8,
     overflow: 'hidden', // Ensure gradient stays within border radius
   },
+
   fabGradient: {
     width: '100%',
     height: '100%',
@@ -1827,6 +2064,11 @@ const styles = StyleSheet.create({
     color: 'white',
     fontWeight: 'bold',
   },
+  doneButton: {
+    fontSize: 16,
+    color: THEME_COLORS.accent,
+    fontWeight: '600',
+  },
   modalTitle: {
     fontSize: 20,
     fontWeight: 'bold',
@@ -1855,6 +2097,13 @@ const styles = StyleSheet.create({
     fontSize: 18,
     color: 'white',
     fontWeight: '500',
+  },
+  emptyTrashSubMessage: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.7)',
+    fontWeight: '400',
+    marginTop: 8,
+    textAlign: 'center',
   },
   trashGrid: {
     flex: 1,
@@ -2147,6 +2396,31 @@ const styles = StyleSheet.create({
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
   },
+  // Heart Button Styles
+  heartButton: {
+    position: 'absolute',
+    bottom: 16,
+    right: 16,
+    zIndex: 10,
+    elevation: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+  },
+  heartButtonGradient: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(255, 69, 69, 0.6)', // Red border to match heart
+    shadowColor: 'rgba(255, 69, 69, 0.3)',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+  },
   // Trash Modal Lazy Loading Styles
   loadingMoreContainer: {
     padding: 20,
@@ -2180,5 +2454,95 @@ const styles = StyleSheet.create({
     color: THEME_COLORS.accent,
     fontWeight: 'bold',
     textAlign: 'center',
+  },
+  // Favorites Button Styles (below photo container)
+  favoritesButton: {
+    alignSelf: 'center',
+    marginVertical: 15,
+    borderRadius: 25,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 107, 107, 0.4)',
+    shadowColor: '#ff6b6b',
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.4,
+    shadowRadius: 6,
+    elevation: 5,
+    overflow: 'hidden',
+  },
+  favoritesButtonGradient: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+  },
+  favoritesButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 8,
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 3,
+  },
+  // Photo Preview Modal Styles
+  previewModalContainer: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+  },
+  previewModalGradient: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  previewCloseButton: {
+    position: 'absolute',
+    top: 60,
+    left: 20,
+    zIndex: 10,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  previewCloseText: {
+    color: 'white',
+    fontSize: 24,
+    fontWeight: 'bold',
+  },
+  previewPhotoContainer: {
+    width: '90%',
+    height: '80%',
+    position: 'relative',
+  },
+  previewPhoto: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 20,
+    resizeMode: 'contain',
+  },
+  previewShareButton: {
+    position: 'absolute',
+    top: 15,
+    right: 15,
+    width: 45,
+    height: 45,
+    borderRadius: 22.5,
+    borderWidth: 2,
+    borderColor: 'rgba(76, 217, 100, 0.3)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
+    overflow: 'hidden',
+  },
+  previewShareButtonGradient: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
