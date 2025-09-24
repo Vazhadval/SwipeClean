@@ -65,6 +65,10 @@ const THEME_COLORS = {
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
+// Responsive breakpoints
+const isSmallScreen = screenHeight < 700;
+const isVerySmallScreen = screenHeight < 600;
+
 interface Photo {
   id: string;
   uri: string;
@@ -1382,32 +1386,35 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 40,
+    paddingHorizontal: isSmallScreen ? 30 : 40,
+    paddingBottom: isSmallScreen ? 140 : 120, // More padding on smaller screens to prevent overlap
+    paddingTop: isSmallScreen ? 20 : 0, // Add top padding on small screens for better balance
   },
   completedTitle: {
-    fontSize: 32,
+    fontSize: isVerySmallScreen ? 22 : isSmallScreen ? 26 : 28, // Responsive font sizes
     fontWeight: 'bold',
     color: 'white',
     textAlign: 'center',
-    marginBottom: 20,
+    marginBottom: isSmallScreen ? 10 : 15, // Reduced margin on small screens
   },
   completedText: {
-    fontSize: 18,
+    fontSize: isVerySmallScreen ? 14 : 16, // Smaller font on very small screens
     color: 'white',
     textAlign: 'center',
-    marginBottom: 40,
+    marginBottom: isSmallScreen ? 20 : 30, // Reduced margin on small screens
+    lineHeight: isVerySmallScreen ? 20 : 22, // Adjusted line height
   },
   statsContainer: {
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: 40,
-    marginBottom: 40,
+    gap: isSmallScreen ? 20 : 30, // Even smaller gap on small screens
+    marginBottom: isSmallScreen ? 20 : 30, // Reduced margin on small screens
   },
   statItem: {
     alignItems: 'center',
   },
   statNumber: {
-    fontSize: 48,
+    fontSize: isVerySmallScreen ? 32 : isSmallScreen ? 38 : 42, // Responsive font sizes
     fontWeight: 'bold',
     color: 'white',
   },
@@ -1461,11 +1468,11 @@ const styles = StyleSheet.create({
   // Floating Action Button styles
   fabButton: {
     position: 'absolute',
-    bottom: 30,
+    bottom: isSmallScreen ? 20 : 30,
     right: 20,
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: isVerySmallScreen ? 50 : 60,
+    height: isVerySmallScreen ? 50 : 60,
+    borderRadius: isVerySmallScreen ? 25 : 30,
     borderWidth: 2,
     borderColor: THEME_COLORS.accent, // Bright teal border
     shadowColor: '#000',
@@ -1483,10 +1490,10 @@ const styles = StyleSheet.create({
     height: '100%',
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 30,
+    borderRadius: isVerySmallScreen ? 25 : 30,
   },
   fabIcon: {
-    fontSize: 24,
+    fontSize: isVerySmallScreen ? 20 : 24,
     color: THEME_COLORS.accent, // Bright teal trash icon
   },
   fabBadge: {
@@ -1510,11 +1517,11 @@ const styles = StyleSheet.create({
   // Undo Button styles (positioned opposite to trash button)
   undoButton: {
     position: 'absolute',
-    bottom: 30,
+    bottom: isSmallScreen ? 20 : 30,
     left: 20, // Opposite side of trash button
-    width: 60,
-    height: 60,
-    borderRadius: 30,
+    width: isVerySmallScreen ? 50 : 60,
+    height: isVerySmallScreen ? 50 : 60,
+    borderRadius: isVerySmallScreen ? 25 : 30,
     borderWidth: 2,
     borderColor: THEME_COLORS.accent, // Same teal border
     shadowColor: '#000',
@@ -1532,10 +1539,10 @@ const styles = StyleSheet.create({
     height: '100%',
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: 30,
+    borderRadius: isVerySmallScreen ? 25 : 30,
   },
   undoIcon: {
-    fontSize: 28,
+    fontSize: isVerySmallScreen ? 22 : 28,
     color: THEME_COLORS.accent, // Bright teal undo icon
     fontWeight: 'bold',
   },
